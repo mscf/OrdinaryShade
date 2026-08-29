@@ -1,7 +1,14 @@
 import unittest
 import shutil
+from pathlib import Path
 
 import ordinaryshade as osh
+
+
+NAGA_AVAILABLE = (
+    shutil.which("naga") is not None
+    or (Path.home() / ".cargo" / "bin" / "naga").is_file()
+)
 
 
 @osh.structure
@@ -62,7 +69,7 @@ class CompilerTests(unittest.TestCase):
         self.assertIn("exp((-abs(value)))", glsl.source)
         self.assertIn("continue;", glsl.source)
         wgsl = osh.compile(
-            filter_words, helpers=(weight,), target="wgsl", validate=True,
+            filter_words, helpers=(weight,), target="wgsl", validate=NAGA_AVAILABLE,
         )
         self.assertIn("exp((-abs(value)))", wgsl.source)
         self.assertIn("continue;", wgsl.source)
@@ -77,7 +84,7 @@ class CompilerTests(unittest.TestCase):
         glsl = osh.compile_function(signed)
         self.assertIn("if ((!enabled))", glsl.source)
         self.assertIn("return (-value);", glsl.source)
-        wgsl = osh.compile_function(signed, target="wgsl", validate=True)
+        wgsl = osh.compile_function(signed, target="wgsl", validate=NAGA_AVAILABLE)
         self.assertIn("if ((!enabled))", wgsl.source)
 
     def test_composed_helpers_can_call_other_helpers(self):
@@ -96,7 +103,7 @@ class CompilerTests(unittest.TestCase):
         glsl = osh.compile(write, helpers=(quantize, shifted))
         self.assertIn("return (quantize(value) << uint(8))", glsl.source)
         wgsl = osh.compile(
-            write, helpers=(quantize, shifted), target="wgsl", validate=True,
+            write, helpers=(quantize, shifted), target="wgsl", validate=NAGA_AVAILABLE,
         )
         self.assertIn("return (quantize(value) << u32(8))", wgsl.source)
 
@@ -109,7 +116,7 @@ class CompilerTests(unittest.TestCase):
         glsl = osh.compile_function(pack_bytes)
         self.assertIn("uint(round(value))", glsl.source)
         self.assertIn("b << uint(8)", glsl.source)
-        wgsl = osh.compile_function(pack_bytes, target="wgsl", validate=True)
+        wgsl = osh.compile_function(pack_bytes, target="wgsl", validate=NAGA_AVAILABLE)
         self.assertIn("u32(round(value))", wgsl.source)
         self.assertIn("b << u32(8)", wgsl.source)
 
@@ -124,7 +131,7 @@ class CompilerTests(unittest.TestCase):
         glsl = osh.compile(fill)
         self.assertIn("ivec2 extent = imageSize(image);", glsl.source)
         self.assertIn("for (int y = int(0); y < extent.y; y += 1)", glsl.source)
-        wgsl = osh.compile(fill, target="wgsl", validate=True)
+        wgsl = osh.compile(fill, target="wgsl", validate=NAGA_AVAILABLE)
         self.assertIn("vec2<i32>(textureDimensions(image))", wgsl.source)
         self.assertIn("for (var x: i32 = i32(0);", wgsl.source)
 
@@ -145,7 +152,7 @@ class CompilerTests(unittest.TestCase):
         self.assertIn("vec3 brighten(vec3 color)", glsl.source)
         self.assertIn("packUnorm4x8(vec4(color, 1.0))", glsl.source)
         wgsl = osh.compile(
-            packed, helpers=(brighten,), target="wgsl", validate=True,
+            packed, helpers=(brighten,), target="wgsl", validate=NAGA_AVAILABLE,
         )
         self.assertIn("fn brighten(color: vec3<f32>)", wgsl.source)
         self.assertIn("pack4x8unorm(vec4<f32>(color, 1.0))", wgsl.source)
@@ -157,7 +164,7 @@ class CompilerTests(unittest.TestCase):
 
         glsl = osh.compile_function(repack)
         self.assertIn("uvec4(value.xy, uint(value.z), value.w)", glsl.source)
-        wgsl = osh.compile_function(repack, target="wgsl", validate=True)
+        wgsl = osh.compile_function(repack, target="wgsl", validate=NAGA_AVAILABLE)
         self.assertIn("vec4<u32>(value.xy, u32(value.z), value.w)", wgsl.source)
 
     def test_write_only_structured_buffer_preserves_target_access(self):
@@ -170,7 +177,7 @@ class CompilerTests(unittest.TestCase):
 
         glsl = osh.compile(write_record)
         self.assertIn("writeonly buffer records_Block", glsl.source)
-        wgsl = osh.compile(write_record, target="wgsl", validate=True)
+        wgsl = osh.compile(write_record, target="wgsl", validate=NAGA_AVAILABLE)
         self.assertIn(
             "var<storage, read_write> records: array<ColorRecord>;",
             wgsl.source,
@@ -203,7 +210,7 @@ class CompilerTests(unittest.TestCase):
             [item.format for item in glsl.reflection.resources],
             ["QueueState", "DispatchState"],
         )
-        wgsl = osh.compile(prepare, target="wgsl", validate=True)
+        wgsl = osh.compile(prepare, target="wgsl", validate=NAGA_AVAILABLE)
         self.assertIn("var<storage, read> queue: QueueState;", wgsl.source)
         self.assertIn("var<storage, read_write> dispatch: DispatchState;", wgsl.source)
         if shutil.which("glslangValidator"):
@@ -228,7 +235,7 @@ class CompilerTests(unittest.TestCase):
         self.assertIn("for (int offset = 0; offset < 4; offset += 1)", glsl.source)
         if shutil.which("glslangValidator"):
             self.assertGreater(len(osh.compile(clear_words, target="spirv").binary), 20)
-        wgsl = osh.compile(clear_words, target="wgsl", validate=True)
+        wgsl = osh.compile(clear_words, target="wgsl", validate=NAGA_AVAILABLE)
         self.assertIn("var<storage, read_write> words: array<u32>;", wgsl.source)
         self.assertIn("for (var offset: i32 = 0;", wgsl.source)
 
@@ -252,7 +259,7 @@ class CompilerTests(unittest.TestCase):
             [item.kind for item in glsl.reflection.resources],
             ["storage_buffer", "uniform_buffer", "storage_image"],
         )
-        wgsl = osh.compile(buffered, target="wgsl", validate=True)
+        wgsl = osh.compile(buffered, target="wgsl", validate=NAGA_AVAILABLE)
         self.assertIn("var<storage, read> records: array<ColorRecord>;", wgsl.source)
         self.assertIn("var<uniform> params: ScaleParameters;", wgsl.source)
         if shutil.which("glslangValidator"):
@@ -279,7 +286,7 @@ class CompilerTests(unittest.TestCase):
             return osh.f32(value)
 
         self.assertIn("return float(value);", osh.compile_function(cast_value).source)
-        wgsl = osh.compile_function(cast_value, target="wgsl", validate=True)
+        wgsl = osh.compile_function(cast_value, target="wgsl", validate=NAGA_AVAILABLE)
         self.assertIn("return f32(value);", wgsl.source)
 
     def test_typed_helper_function_emits_glsl(self):
@@ -318,7 +325,7 @@ class CompilerTests(unittest.TestCase):
         glsl = osh.compile_function(aces)
         self.assertIn("return clamp(", glsl.source)
         self.assertIn("vec3(0.0), vec3(1.0)", glsl.source)
-        wgsl = osh.compile_function(aces, target="wgsl", validate=True)
+        wgsl = osh.compile_function(aces, target="wgsl", validate=NAGA_AVAILABLE)
         self.assertIn("return clamp(", wgsl.source)
         self.assertIn("vec3<f32>(0.0), vec3<f32>(1.0)", wgsl.source)
 
@@ -344,7 +351,7 @@ class CompilerTests(unittest.TestCase):
         self.assertIn("pow(color, vec3((1.0 / 2.4)))", glsl.source)
         self.assertIn("return mix(", glsl.source)
         wgsl = osh.compile_function(
-            linear_to_srgb, target="wgsl", validate=True,
+            linear_to_srgb, target="wgsl", validate=NAGA_AVAILABLE,
         )
         self.assertIn("(color <= vec3<f32>(0.0031308))", wgsl.source)
         self.assertIn("return select(", wgsl.source)
@@ -361,7 +368,7 @@ class CompilerTests(unittest.TestCase):
         glsl = osh.compile_function(threshold)
         self.assertIn("float doubled = (value * 2.0);", glsl.source)
         self.assertIn("if ((doubled <= cutoff))", glsl.source)
-        wgsl = osh.compile_function(threshold, target="wgsl", validate=True)
+        wgsl = osh.compile_function(threshold, target="wgsl", validate=NAGA_AVAILABLE)
         self.assertIn("let doubled: f32 = (value * 2.0);", wgsl.source)
         self.assertIn("if ((doubled <= cutoff))", wgsl.source)
 
@@ -384,7 +391,7 @@ class CompilerTests(unittest.TestCase):
         glsl = osh.compile_function(choose)
         self.assertIn("bvec3 low = lessThanEqual", glsl.source)
         self.assertIn("return mix(vec3(0.0), color, low);", glsl.source)
-        osh.compile_function(choose, target="wgsl", validate=True)
+        osh.compile_function(choose, target="wgsl", validate=NAGA_AVAILABLE)
 
     def test_compute_shader_emits_vulkan_glsl_and_reflection(self):
         result = osh.compile(copy_image)
@@ -501,16 +508,16 @@ class CompilerTests(unittest.TestCase):
         ):
             osh.compile(present, target="wgsl")
 
-    @unittest.skipUnless(shutil.which("naga"), "naga-cli is not installed")
+    @unittest.skipUnless(NAGA_AVAILABLE, "naga-cli is not installed")
     def test_naga_accepts_generated_wgsl(self):
-        result = osh.compile(copy_image, target="wgsl", validate=True)
+        result = osh.compile(copy_image, target="wgsl", validate=NAGA_AVAILABLE)
         self.assertEqual(result.target, "wgsl")
 
         @osh.function
         def tint(color: osh.vec3, target: osh.vec3, strength: osh.f32) -> osh.vec3:
             return osh.mix(color, target, strength)
 
-        helper = osh.compile_function(tint, target="wgsl", validate=True)
+        helper = osh.compile_function(tint, target="wgsl", validate=NAGA_AVAILABLE)
         self.assertEqual(helper.target, "wgsl")
 
     def test_validation_reports_missing_validator(self):
