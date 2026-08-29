@@ -40,6 +40,16 @@ class ExternalFunction:
         return self.function.__name__
 
 
+@dataclass(frozen=True, slots=True)
+class GraphicsShader:
+    function: FunctionType
+    stage: str
+
+    @property
+    def __name__(self):
+        return self.function.__name__
+
+
 def compute(*, workgroup_size=(1, 1, 1), capabilities=()):
     """Declare a Python function as a compute-shader entry point."""
     try:
@@ -60,6 +70,18 @@ def compute(*, workgroup_size=(1, 1, 1), capabilities=()):
         return ComputeShader(function, size, declared_capabilities)
 
     return decorate
+
+
+def _graphics(stage):
+    def decorate(function):
+        if not isinstance(function, FunctionType):
+            raise ShaderTypeError(f"@{stage} can only decorate a Python function")
+        return GraphicsShader(function, stage)
+    return decorate
+
+
+vertex = _graphics("vertex")
+fragment = _graphics("fragment")
 
 
 def function(function):

@@ -17,6 +17,8 @@ jobs:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
+      - name: Install Vulkan shader validator
+        run: sudo apt-get update && sudo apt-get install -y glslang-tools
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
@@ -28,20 +30,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install Vulkan shader validator
+        run: sudo apt-get update && sudo apt-get install -y glslang-tools
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
           cache: pip
       - uses: dtolnay/rust-toolchain@stable
       - name: Cache Naga validator
-        id: naga-cache
         uses: actions/cache@v4
         with:
           path: ~/.cargo/bin/naga
-          key: ${{ runner.os }}-naga-cli-30.0.0
-      - name: Install Naga validator
-        if: steps.naga-cache.outputs.cache-hit != 'true'
-        run: cargo install naga-cli --version 30.0.0 --locked
+          key: ${{ runner.os }}-${{ runner.arch }}-naga-cli-30.0.0-v2
+      - name: Ensure Naga validator is executable
+        run: |
+          if ! command -v naga >/dev/null 2>&1; then
+            cargo install naga-cli --version 30.0.0 --locked
+          fi
+          naga --version
       - run: python -m pip install -e .
       - run: python scripts/validate_generated_wgsl.py
       - run: python -m unittest discover -s tests -v
@@ -62,3 +68,34 @@ jobs:
         with:
           name: ordinaryshade-distributions
           path: dist/
+
+  ordinarylight-compatibility:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check out Ordinary Light
+        uses: actions/checkout@v4
+        with:
+          repository: mscf/OrdinaryLight
+          path: compatibility/OrdinaryLight
+      - name: Expose this checkout as Ordinary Light's sibling compiler
+        run: ln -s "$GITHUB_WORKSPACE" compatibility/ordinaryshade
+      - name: Install Vulkan shader validator
+        run: sudo apt-get update && sudo apt-get install -y glslang-tools
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: python -m pip install -e .
+      - name: Install Ordinary Light with its Vulkan bindings
+        run: python -m pip install -e "compatibility/OrdinaryLight[vulkan]"
+      - name: Verify Ordinary Light generated sources
+        working-directory: compatibility/OrdinaryLight
+        run: |
+          python scripts/generate_color_shaders.py --check
+          python scripts/generate_effect_shaders.py --check
+          python scripts/generate_primary_shaders.py --check
+          python scripts/generate_core_shaders.py --check
+      - name: Run Ordinary Light compiler compatibility tests
+        working-directory: compatibility/OrdinaryLight
+        run: python -m unittest tests.test_ordinaryshade_color tests.test_ordinaryshade_effects tests.test_ordinaryshade_primary tests.test_ordinaryshade_core tests.test_materials tests.test_shader_manifest

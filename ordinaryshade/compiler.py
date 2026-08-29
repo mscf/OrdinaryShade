@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 from pathlib import Path
 import shutil
 import subprocess
 import tempfile
 
 from .backends import emit_glsl, emit_wgsl
-from .errors import CompilerUnavailableError, ShaderCompilationError, ShaderTypeError
-from .lowering import lower, lower_external, lower_function
-from .reflection import ResourceReflection, ShaderReflection
+from .diagnostics import SourceMapEntry, annotate_error, module_source_map
+from .entrypoints import GraphicsShader
+from .errors import CompilerUnavailableError, ShaderCompilationError, ShaderError, ShaderTypeError
+from .lowering import lower, lower_external, lower_function, lower_graphics
+from .reflection import GraphicsPipelineReflection, ResourceReflection, ShaderReflection, StageIOReflection
 from .validation import validate_wgsl
 from .types import AccelerationStructure, PushConstants, RuntimeArrayType, SampledTexture2DArray, SampledTexture3DArray, ShaderType, StorageBuffer, StorageImage, StorageRecord, StructType, UniformBuffer
 
@@ -22,6 +25,8 @@ class CompiledShader:
     source: str
     binary: bytes | None
     reflection: ShaderReflection
+    cache_key: str = ""
+    source_map: tuple[SourceMapEntry, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,6 +34,49 @@ class CompiledFunction:
     source: str
     name: str
     target: str = "glsl"
+    cache_key: str = ""
+    source_map: tuple[SourceMapEntry, ...] = ()
+
+
+def _cache_key(target: str, source: str) -> str:
+    """Return a stable content identity suitable for persistent caches."""
+    payload = b"ordinaryshade\0v1\0" + target.encode() + b"\0" + source.encode()
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _compiled_shader(target, source, binary, reflection, shader):
+    return CompiledShader(
+        target, source, binary, reflection, _cache_key(target, source),
+        module_source_map(source, shader),
+    )
+
+
+def link_graphics(vertex_shader, fragment_shader):
+    """Validate and reflect a vertex/fragment interface pair."""
+    vertex_reflection = vertex_shader.reflection
+    fragment_reflection = fragment_shader.reflection
+    if vertex_reflection.stage != "vertex" or fragment_reflection.stage != "fragment":
+        raise ShaderTypeError("link_graphics() expects compiled vertex and fragment shaders")
+    vertex_outputs = {
+        item.location: item for item in vertex_reflection.outputs
+        if item.location is not None
+    }
+    varyings = []
+    for item in fragment_reflection.inputs:
+        if item.location is None:
+            continue
+        producer = vertex_outputs.get(item.location)
+        if producer is None:
+            raise ShaderTypeError(f"fragment location {item.location} has no vertex output")
+        if producer.type != item.type:
+            raise ShaderTypeError(
+                f"graphics location {item.location} type mismatch: "
+                f"vertex {producer.type}, fragment {item.type}"
+            )
+        varyings.append(item)
+    return GraphicsPipelineReflection(
+        vertex_reflection, fragment_reflection, tuple(varyings),
+    )
 
 
 def _reflection(module):
@@ -80,14 +128,30 @@ def _reflection(module):
     )
 
 
-def _spirv(source, compiler):
+def _graphics_reflection(module):
+    def reflected(item):
+        return StageIOReflection(
+            item.name, item.type_name, item.location, item.builtin,
+        )
+    resources = _reflection(type("ComputeReflectionView", (), {
+        "resources": module.resources, "workgroup_size": (1, 1, 1),
+    })()).resources
+    return ShaderReflection(
+        module.stage, "main", (1, 1, 1), resources,
+        tuple(reflected(item) for item in module.inputs),
+        tuple(reflected(item) for item in module.outputs),
+    )
+
+
+def _spirv(source, compiler, stage="compute"):
     executable = shutil.which(compiler)
     if executable is None:
         raise CompilerUnavailableError(
             f"could not locate {compiler!r}; install glslangValidator or compile to GLSL"
         )
     with tempfile.TemporaryDirectory(prefix="ordinaryshade-") as directory:
-        source_path = Path(directory) / "shader.comp"
+        suffix = {"compute": "comp", "vertex": "vert", "fragment": "frag"}[stage]
+        source_path = Path(directory) / f"shader.{suffix}"
         output_path = Path(directory) / "shader.spv"
         source_path.write_text(source)
         result = subprocess.run(
@@ -113,20 +177,29 @@ def compile(
     helpers=(), externals=(),
 ):
     """Compile a decorated shader to GLSL, WGSL, or Vulkan SPIR-V."""
-    module = lower(shader, helpers=helpers, externals=externals)
-    reflection = _reflection(module)
+    try:
+        module = (
+            lower_graphics(shader) if isinstance(shader, GraphicsShader)
+            else lower(shader, helpers=helpers, externals=externals)
+        )
+    except ShaderError as error:
+        raise annotate_error(error, shader) from error.__cause__
+    reflection = (
+        _graphics_reflection(module)
+        if isinstance(shader, GraphicsShader) else _reflection(module)
+    )
     if target == "glsl":
         source = emit_glsl(module)
-        return CompiledShader(target, source, None, reflection)
+        return _compiled_shader(target, source, None, reflection, shader)
     if target == "wgsl":
         source = emit_wgsl(module)
         if validate:
             validate_wgsl(source, validator=wgsl_validator)
-        return CompiledShader(target, source, None, reflection)
+        return _compiled_shader(target, source, None, reflection, shader)
     if target == "spirv":
         source = emit_glsl(module)
-        return CompiledShader(
-            target, source, _spirv(source, spirv_compiler), reflection,
+        return _compiled_shader(
+            target, source, _spirv(source, spirv_compiler, reflection.stage), reflection, shader,
         )
     raise ShaderTypeError("target must be 'glsl', 'wgsl', or 'spirv'")
 
@@ -168,12 +241,13 @@ def compile_function(
     )
     if target == "glsl":
         declarations = "".join(emit_glsl(item, declaration=True) for item in external_modules)
-        return CompiledFunction(declarations + emit_glsl(module), module.name, target)
+        source = declarations + emit_glsl(module)
+        return CompiledFunction(source, module.name, target, _cache_key(target, source), module_source_map(source, shader))
     if target == "wgsl":
         if external_modules or declared_values:
             raise ShaderTypeError("WGSL does not support external ABI declarations")
         source = emit_wgsl(module)
         if validate:
             validate_wgsl(source, validator=wgsl_validator)
-        return CompiledFunction(source, module.name, target)
+        return CompiledFunction(source, module.name, target, _cache_key(target, source), module_source_map(source, shader))
     raise ShaderTypeError("function target must be 'glsl' or 'wgsl'")

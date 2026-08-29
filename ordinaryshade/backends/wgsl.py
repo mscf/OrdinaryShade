@@ -6,7 +6,7 @@ from ..errors import ShaderTypeError
 from ..ir import (
     Assign, Attribute, Binary, Break, Call, Compare, Conditional, Continue,
     ExpressionStatement, ForRange, FunctionModule, If, Let, Literal, Name,
-    Return, Subscript, Unary, While,
+    Return, Subscript, Unary, While, GraphicsModule,
 )
 from ..types import (
     AccelerationStructure, FixedArrayType, PushConstants, RuntimeArrayType, SampledTexture2DArray, SampledTexture3DArray, StorageBuffer, StorageImage, StorageImageArray, StorageRecord, StructType,
@@ -321,6 +321,8 @@ def _statement(value, indent=1):
 
 def emit_wgsl(module):
     """Emit a lowered Ordinary Shade module as WGSL source."""
+    if isinstance(module, GraphicsModule):
+        return _emit_graphics(module)
     if isinstance(module, FunctionModule):
         if any(parameter.qualifier != "in" for parameter in module.parameters):
             raise ShaderTypeError("WGSL does not support inout parameters")
@@ -476,6 +478,54 @@ def emit_wgsl(module):
         ") {",
     ))
     for statement in module.statements:
+        lines.extend(_statement(statement))
+    lines.extend(("}", ""))
+    return "\n".join(lines)
+
+
+def _io_attribute(item):
+    return f"@location({item.location})" if item.location is not None else f"@builtin({item.builtin})"
+
+
+def _emit_graphics(module):
+    lines = []
+    declared = set()
+    for structure in module.structures:
+        if structure.name in declared: continue
+        declared.add(structure.name)
+        lines.append(f"struct {structure.name} {{")
+        lines.extend(f"    {_identifier(field.name)}: {_field_type(field)}," for field in structure.fields)
+        lines.extend(("}", ""))
+    for resource in module.resources:
+        if isinstance(resource.type, UniformBuffer):
+            lines.append(f"@group({resource.set}) @binding({resource.binding}) var<uniform> {_identifier(resource.name)}: {resource.type.struct_type.name};")
+        elif isinstance(resource.type, StorageBuffer):
+            access = "read" if resource.type.access == "read" else "read_write"
+            lines.append(f"@group({resource.set}) @binding({resource.binding}) var<storage, {access}> {_identifier(resource.name)}: array<{_value_type(resource.type.element_type.name)}>;")
+        elif isinstance(resource.type, StorageRecord):
+            access = "read" if resource.type.access == "read" else "read_write"
+            lines.append(f"@group({resource.set}) @binding({resource.binding}) var<storage, {access}> {_identifier(resource.name)}: {resource.type.struct_type.name};")
+    if module.resources:
+        lines.append("")
+    if module.output_structure is not None:
+        lines.append(f"struct {module.output_structure.name} {{")
+        for field, item in zip(module.output_structure.fields, module.outputs):
+            lines.append(
+                f"    {_io_attribute(item)} {_identifier(field.name)}: {_value_type(field.type.name)},"
+            )
+        lines.extend(("}", ""))
+    parameters = ",\n".join(
+        f"    {_io_attribute(item)} {_identifier(item.name)}: {_value_type(item.type_name)}"
+        for item in module.inputs
+    )
+    if module.output_structure is not None:
+        result = f" -> {module.output_structure.name}"
+    else:
+        item = module.outputs[0]
+        result = f" -> {_io_attribute(item)} {_value_type(item.type_name)}"
+    lines.append(f"@{module.stage}")
+    lines.append(f"fn main(\n{parameters}\n){result} {{")
+    for statement in module.function.statements:
         lines.extend(_statement(statement))
     lines.extend(("}", ""))
     return "\n".join(lines)

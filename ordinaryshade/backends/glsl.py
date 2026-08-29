@@ -6,7 +6,7 @@ from ..errors import ShaderTypeError
 from ..ir import (
     Assign, Attribute, Binary, Break, Call, Compare, Conditional, Continue,
     ExpressionStatement, ForRange, FunctionModule, If, Let, Literal, Name,
-    Return, Subscript, Unary, While,
+    Return, Subscript, Unary, While, GraphicsModule,
 )
 from ..types import (
     AccelerationStructure, FixedArrayType, PushConstants, RuntimeArrayType, SampledTexture2DArray, SampledTexture3DArray, StorageBuffer, StorageImage, StorageImageArray, StorageRecord, StructType,
@@ -260,6 +260,8 @@ def _statement(value, indent=1):
 
 
 def emit_glsl(module, declaration=False):
+    if isinstance(module, GraphicsModule):
+        return _emit_graphics(module)
     if isinstance(module, FunctionModule):
         parameters = ", ".join(
             f"{parameter.qualifier + ' ' if parameter.qualifier != 'in' else ''}"
@@ -478,5 +480,71 @@ def emit_glsl(module, declaration=False):
     lines.extend(("", "void main()", "{"))
     for statement in module.statements:
         lines.extend(_statement(statement))
+    lines.extend(("}", ""))
+    return "\n".join(lines)
+
+
+def _glsl_builtin(name):
+    return {
+        "position": "gl_Position", "vertex_index": "gl_VertexIndex",
+        "instance_index": "gl_InstanceIndex", "front_facing": "gl_FrontFacing",
+        "frag_depth": "gl_FragDepth",
+    }[name]
+
+
+def _emit_graphics(module):
+    lines = ["#version 460", ""]
+    declared = set()
+    for structure in module.structures:
+        if structure.name in declared: continue
+        declared.add(structure.name)
+        lines.extend((f"struct {structure.name}", "{"))
+        lines.extend(f"    {_field_declaration(field)}" for field in structure.fields)
+        lines.extend(("};", ""))
+    for resource in module.resources:
+        if isinstance(resource.type, UniformBuffer):
+            lines.append(f"layout(std140, set = {resource.set}, binding = {resource.binding}) uniform {_identifier(resource.name)}_Block")
+            lines.append("{")
+            lines.extend(f"    {field.type.name} {_identifier(field.name)};" for field in resource.type.struct_type.fields)
+            lines.extend((f"}} {_identifier(resource.name)};", ""))
+        elif isinstance(resource.type, StorageBuffer):
+            qualifier = "readonly " if resource.type.access == "read" else ""
+            lines.extend((f"layout(std430, set = {resource.set}, binding = {resource.binding}) {qualifier}buffer {_identifier(resource.name)}_Block", "{", f"    {resource.type.element_type.name} {_identifier(resource.name)}[];", "};", ""))
+        elif isinstance(resource.type, StorageRecord):
+            qualifier = "readonly " if resource.type.access == "read" else ""
+            lines.extend((f"layout(std430, set = {resource.set}, binding = {resource.binding}) {qualifier}buffer {_identifier(resource.name)}_Block", "{"))
+            lines.extend(f"    {_field_declaration(field)}" for field in resource.type.struct_type.fields)
+            lines.extend((f"}} {_identifier(resource.name)};", ""))
+    if module.output_structure is not None:
+        lines.extend((f"struct {module.output_structure.name}", "{"))
+        lines.extend(
+            f"    {field.type.name} {_identifier(field.name)};"
+            for field in module.output_structure.fields
+        )
+        lines.extend(("};", ""))
+    arguments = []
+    for item in module.inputs:
+        if item.location is not None:
+            symbol = f"_osh_in_{item.name}"
+            lines.append(f"layout(location = {item.location}) in {item.type_name} {symbol};")
+            arguments.append(symbol)
+        else:
+            arguments.append(_glsl_builtin(item.builtin))
+    for item in module.outputs:
+        if item.location is not None:
+            lines.append(f"layout(location = {item.location}) out {item.type_name} _osh_out_{item.name};")
+    lines.append("")
+    lines.extend(emit_glsl(module.function).rstrip().splitlines())
+    lines.extend(("", "void main()", "{"))
+    call = f"{module.function.name}({', '.join(arguments)})"
+    if module.output_structure is None:
+        item = module.outputs[0]
+        target = _glsl_builtin(item.builtin) if item.builtin else f"_osh_out_{item.name}"
+        lines.append(f"    {target} = {call};")
+    else:
+        lines.append(f"    {module.output_structure.name} _osh_result = {call};")
+        for item in module.outputs:
+            target = _glsl_builtin(item.builtin) if item.builtin else f"_osh_out_{item.name}"
+            lines.append(f"    {target} = _osh_result.{_identifier(item.name)};")
     lines.extend(("}", ""))
     return "\n".join(lines)

@@ -28,6 +28,36 @@ class QualifiedType:
         return self.type.name
 
 
+@dataclass(frozen=True, slots=True)
+class StageIOType:
+    """A graphics-stage value attached to a location or pipeline builtin."""
+
+    type: ShaderType | StructType
+    location: int | None = None
+    builtin: str | None = None
+
+    @property
+    def name(self):
+        return self.type.name
+
+
+def location(value_type, index: int):
+    if not isinstance(value_type, (ShaderType, StructType)):
+        raise ShaderTypeError("stage locations require a shader value type")
+    if not isinstance(index, int) or index < 0:
+        raise ShaderTypeError("stage locations require a non-negative integer")
+    return StageIOType(value_type, location=index)
+
+
+def builtin(value_type, name: str):
+    supported = {"position", "vertex_index", "instance_index", "front_facing", "frag_depth"}
+    if not isinstance(value_type, (ShaderType, StructType)):
+        raise ShaderTypeError("stage builtins require a shader value type")
+    if name not in supported:
+        raise ShaderTypeError(f"unsupported graphics builtin {name!r}")
+    return StageIOType(value_type, builtin=name)
+
+
 def inout(value_type):
     """Declare a mutable shader-function parameter."""
     if not isinstance(value_type, (ShaderType, StructType)):
@@ -66,7 +96,7 @@ ray_query = ShaderType("rayQueryEXT")
 @dataclass(frozen=True, slots=True)
 class StructField:
     name: str
-    type: ShaderType | StructType | RuntimeArrayType | FixedArrayType
+    type: ShaderType | StructType | RuntimeArrayType | FixedArrayType | StageIOType
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,7 +166,7 @@ def structure(cls):
         raise ShaderTypeError("shader structures require at least one annotated field")
     fields = []
     for index, (name, field_type) in enumerate(annotations.items()):
-        if not isinstance(field_type, (ShaderType, StructType, RuntimeArrayType, FixedArrayType)):
+        if not isinstance(field_type, (ShaderType, StructType, RuntimeArrayType, FixedArrayType, StageIOType)):
             raise ShaderTypeError(
                 f"structure field {name!r} requires a shader value type"
             )
