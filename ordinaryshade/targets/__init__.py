@@ -1,4 +1,4 @@
-"""Ordinary Shade compiler backends."""
+"""Ordinary Shade compiler targets."""
 
 from .glsl import emit_glsl
 from .wgsl import emit_wgsl

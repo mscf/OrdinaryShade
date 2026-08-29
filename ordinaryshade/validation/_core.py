@@ -7,7 +7,7 @@ import shutil
 import subprocess
 import tempfile
 
-from .errors import CompilerUnavailableError, ShaderCompilationError
+from ..errors import CompilerUnavailableError, ShaderCompilationError
 
 
 def validate_wgsl(source: str, *, validator: str = "naga") -> None:

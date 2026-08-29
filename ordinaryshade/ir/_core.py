@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .types import PushConstants, SampledTexture2DArray, SampledTexture3DArray, StorageBuffer, StorageImage, StorageRecord, UniformBuffer
+from ..types import PushConstants, SampledTexture2DArray, SampledTexture3DArray, StorageBuffer, StorageImage, StorageRecord, UniformBuffer
 
 
 @dataclass(frozen=True, slots=True)

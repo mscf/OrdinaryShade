@@ -10,6 +10,16 @@ compiler boundaries, diagnostics, resource reflection, and packaging needed to
 grow toward SPIR-V and additional shader stages without making GLSL the
 project's internal representation.
 
+## Package organization
+
+The Python package is organized into semantic namespaces: entry-point
+declarations are in `ordinaryshade.entrypoints`, types and resources in
+`ordinaryshade.types`, compiler IR in `ordinaryshade.ir`, compilation in
+`ordinaryshade.compiler`, diagnostics and validation in their corresponding
+namespaces, and target emitters in `ordinaryshade.targets`. The package-level
+`ordinaryshade` imports remain the concise public API; the namespaces provide
+stable, focused import paths for larger integrations.
+
 Graphics interfaces use portable location and builtin semantics:
 
 ```python
@@ -77,7 +87,7 @@ print(webgpu_shader.source)
 ```
 
 Portable structured resources use explicit declarations and retain stable
-reflection names across backends:
+reflection names across targets:
 
 ```python
 @osh.structure
@@ -126,7 +136,7 @@ This is not a compiler for arbitrary Python. Dynamic allocation, I/O,
 exceptions, imports, reflection, recursion, and other Python runtime behavior
 are intentionally unavailable in shader functions.
 
-## Backend-specific shader authoring
+## Target-specific shader authoring
 
 Complete production shaders may use explicitly declared backend capabilities
 without embedding raw source. Ordinary Shade supports compute scheduling

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import inspect
 
-from .errors import ShaderTypeError
+from ..errors import ShaderTypeError
 
 
 @dataclass(frozen=True, slots=True)

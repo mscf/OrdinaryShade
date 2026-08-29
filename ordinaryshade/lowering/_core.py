@@ -6,15 +6,15 @@ import ast
 import inspect
 import textwrap
 
-from .entrypoints import ComputeShader, ExternalFunction, GraphicsShader, ShaderFunction
-from .errors import ShaderSyntaxError, ShaderTypeError
-from .ir import (
+from ..entrypoints import ComputeShader, ExternalFunction, GraphicsShader, ShaderFunction
+from ..errors import ShaderSyntaxError, ShaderTypeError
+from ..ir import (
     Assign, Attribute, Binary, Break, Call, Compare, ComputeModule, Conditional, Continue,
     ExpressionStatement, ForRange, If, Let, Literal, Name, Parameter, Resource,
     Return, Subscript, Unary, While,
     FunctionModule, GraphicsModule, StageInterface,
 )
-from .types import (
+from ..types import (
     AccelerationStructure, FixedArrayType, PushConstants, RuntimeArrayType, ShaderType, StorageBuffer, StorageImage, StorageImageArray, SampledTexture2DArray, SampledTexture3DArray, StorageRecord, StructType,
     UniformBuffer, QualifiedType, StageIOType,
 )
@@ -679,7 +679,7 @@ def lower_graphics(shader: GraphicsShader) -> GraphicsModule:
     # interface metadata remains attached to the module.
     lower_structures = {}
     if output_structure is not None:
-        from .types import StructField
+        from ..types import StructField
         lowered = StructType(output_structure.name, tuple(
             StructField(field.name, field.type.type) for field in output_structure.fields
         ))

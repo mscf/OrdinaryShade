@@ -9,14 +9,14 @@ import shutil
 import subprocess
 import tempfile
 
-from .backends import emit_glsl, emit_wgsl
-from .diagnostics import SourceMapEntry, annotate_error, module_source_map
-from .entrypoints import GraphicsShader
-from .errors import CompilerUnavailableError, ShaderCompilationError, ShaderError, ShaderTypeError
-from .lowering import lower, lower_external, lower_function, lower_graphics
-from .reflection import GraphicsPipelineReflection, ResourceReflection, ShaderReflection, StageIOReflection
-from .validation import validate_wgsl
-from .types import AccelerationStructure, PushConstants, RuntimeArrayType, SampledTexture2DArray, SampledTexture3DArray, ShaderType, StorageBuffer, StorageImage, StorageRecord, StructType, UniformBuffer
+from ..targets import emit_glsl, emit_wgsl
+from ..diagnostics import SourceMapEntry, annotate_error, module_source_map
+from ..entrypoints import GraphicsShader
+from ..errors import CompilerUnavailableError, ShaderCompilationError, ShaderError, ShaderTypeError
+from ..lowering import lower, lower_external, lower_function, lower_graphics
+from ..reflection import GraphicsPipelineReflection, ResourceReflection, ShaderReflection, StageIOReflection
+from ..validation import validate_wgsl
+from ..types import AccelerationStructure, PushConstants, RuntimeArrayType, SampledTexture2DArray, SampledTexture3DArray, ShaderType, StorageBuffer, StorageImage, StorageRecord, StructType, UniformBuffer
 
 
 @dataclass(frozen=True, slots=True)
