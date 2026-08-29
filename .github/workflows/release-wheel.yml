@@ -1,0 +1,38 @@
+name: Build release distributions
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  distributions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Check release version
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: python scripts/check_release_version.py "$RELEASE_TAG"
+      - run: python -m pip install --upgrade build twine
+      - run: python -m build
+      - run: python -m twine check dist/*
+      - run: python scripts/verify_wheel.py dist/*.whl
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ordinaryshade-${{ github.event.release.tag_name }}
+          path: dist/*
+      - name: Attach distributions to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$RELEASE_TAG" dist/* --clobber
+

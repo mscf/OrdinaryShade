@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ordinaryshade"
+version = "0.1.0a0"
+description = "A typed Python shader language and compiler toolkit"
+readme = "README.md"
+requires-python = ">=3.10"
+keywords = ["shader", "glsl", "wgsl", "webgpu", "spir-v", "vulkan", "gpu", "compiler"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Compilers",
+    "Topic :: Multimedia :: Graphics",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["build>=1.2", "twine>=5.1"]
+
+[tool.setuptools.packages.find]
+include = ["ordinaryshade*"]

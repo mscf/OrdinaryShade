@@ -1,0 +1,17 @@
+name: Language or compiler proposal
+description: Propose a shader-language or backend capability
+title: "[Proposal]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Shader use case
+    validations:
+      required: true
+  - type: textarea
+    id: syntax
+    attributes:
+      label: Proposed Python syntax and semantics
+      render: python
+
