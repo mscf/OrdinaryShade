@@ -4,10 +4,30 @@ Ordinary Shade is an experimental, typed Python shader language and compiler
 toolkit. It is intended to compile a restricted Python subset through an owned
 intermediate representation into GPU shader targets.
 
-The first alpha supports small Vulkan GLSL and WebGPU WGSL compute shaders. It establishes the
+The first alpha supports Vulkan GLSL/SPIR-V and WebGPU WGSL compute, vertex,
+and fragment shaders. It establishes the
 compiler boundaries, diagnostics, resource reflection, and packaging needed to
 grow toward SPIR-V and additional shader stages without making GLSL the
 project's internal representation.
+
+Graphics interfaces use portable location and builtin semantics:
+
+```python
+@osh.vertex
+def vertex_main(position: osh.location(osh.vec2, 0)) -> osh.builtin(osh.vec4, "position"):
+    return osh.vec4(position, 0.0, 1.0)
+
+@osh.fragment
+def fragment_main() -> osh.location(osh.vec4, 0):
+    return osh.vec4(0.9, 0.4, 0.1, 1.0)
+
+vertex = osh.compile(vertex_main, target="spirv")
+fragment = osh.compile(fragment_main, target="spirv")
+pipeline = osh.link_graphics(vertex, fragment)
+```
+
+Compiled results include deterministic content cache keys and Python source
+mappings for diagnostics and host-side shader/pipeline caches.
 
 Reusable typed functions can also be generated for integration into a host
 renderer's existing stages:
@@ -24,9 +44,10 @@ The initial value vocabulary includes scalar, vector, boolean-vector, and
 matrix types plus common constructors, arithmetic, relational expressions,
 `power`, `clamp`, and vector-aware `select`. Ordinary Shade emits target-native
 comparison and selection forms, including GLSL relational functions and WGSL
-component-wise operators. Local values are explicitly typed in the IR and
-structured `if`/`else` blocks lower to both targets. NumPy interoperability and
-loops remain planned rather than being inferred ambiguously.
+component-wise operators. Local values are explicitly typed in the IR;
+structured conditionals, dynamic `while` loops, and statically bounded
+`range()` loops lower to both targets. NumPy interoperability remains planned
+rather than being inferred ambiguously.
 
 ```python
 import ordinaryshade as osh

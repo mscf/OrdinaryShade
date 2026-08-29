@@ -6,7 +6,7 @@ from ..errors import ShaderTypeError
 from ..ir import (
     Assign, Attribute, Binary, Break, Call, Compare, Conditional, Continue,
     ExpressionStatement, ForRange, FunctionModule, If, Let, Literal, Name,
-    Return, Subscript, Unary, While,
+    Return, Subscript, Unary, While, GraphicsModule,
 )
 from ..types import (
     AccelerationStructure, FixedArrayType, PushConstants, RuntimeArrayType, SampledTexture2DArray, SampledTexture3DArray, StorageBuffer, StorageImage, StorageImageArray, StorageRecord, StructType,
@@ -321,6 +321,8 @@ def _statement(value, indent=1):
 
 def emit_wgsl(module):
     """Emit a lowered Ordinary Shade module as WGSL source."""
+    if isinstance(module, GraphicsModule):
+        return _emit_graphics(module)
     if isinstance(module, FunctionModule):
         if any(parameter.qualifier != "in" for parameter in module.parameters):
             raise ShaderTypeError("WGSL does not support inout parameters")
@@ -476,6 +478,36 @@ def emit_wgsl(module):
         ") {",
     ))
     for statement in module.statements:
+        lines.extend(_statement(statement))
+    lines.extend(("}", ""))
+    return "\n".join(lines)
+
+
+def _io_attribute(item):
+    return f"@location({item.location})" if item.location is not None else f"@builtin({item.builtin})"
+
+
+def _emit_graphics(module):
+    lines = []
+    if module.output_structure is not None:
+        lines.append(f"struct {module.output_structure.name} {{")
+        for field, item in zip(module.output_structure.fields, module.outputs):
+            lines.append(
+                f"    {_io_attribute(item)} {_identifier(field.name)}: {_value_type(field.type.name)},"
+            )
+        lines.extend(("}", ""))
+    parameters = ",\n".join(
+        f"    {_io_attribute(item)} {_identifier(item.name)}: {_value_type(item.type_name)}"
+        for item in module.inputs
+    )
+    if module.output_structure is not None:
+        result = f" -> {module.output_structure.name}"
+    else:
+        item = module.outputs[0]
+        result = f" -> {_io_attribute(item)} {_value_type(item.type_name)}"
+    lines.append(f"@{module.stage}")
+    lines.append(f"fn main(\n{parameters}\n){result} {{")
+    for statement in module.function.statements:
         lines.extend(_statement(statement))
     lines.extend(("}", ""))
     return "\n".join(lines)

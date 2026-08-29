@@ -4,6 +4,8 @@
 class ShaderError(Exception):
     """Base class for Ordinary Shade errors."""
 
+    source_span = None
+
 
 class ShaderSyntaxError(ShaderError):
     """The Python shader uses syntax outside the supported language."""
@@ -19,4 +21,3 @@ class CompilerUnavailableError(ShaderError):
 
 class ShaderCompilationError(ShaderError):
     """A backend compiler rejected generated shader source."""
-

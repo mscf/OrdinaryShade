@@ -996,3 +996,16 @@ class CompilerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+def test_compiled_shader_has_stable_identity_and_source_map():
+    @osh.compute(workgroup_size=(1, 1, 1))
+    def identity(output: osh.storage_image("rgba16f", access="write", set=0, binding=0)):
+        output.store(osh.global_invocation_id.xy, osh.vec4(1.0))
+
+    first = osh.compile(identity)
+    second = osh.compile(identity)
+    wgsl = osh.compile(identity, target="wgsl")
+    assert first.cache_key == second.cache_key
+    assert first.cache_key != wgsl.cache_key
+    assert len(first.cache_key) == 64
+    assert first.source_map
+    assert first.source_map[0].source.path.endswith("test_compiler.py")

@@ -160,3 +160,21 @@ class FunctionModule:
     parameters: tuple[Parameter, ...]
     return_type: str
     statements: tuple[Statement, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class StageInterface:
+    name: str
+    type_name: str
+    location: int | None = None
+    builtin: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class GraphicsModule:
+    name: str
+    stage: str
+    function: FunctionModule
+    inputs: tuple[StageInterface, ...]
+    outputs: tuple[StageInterface, ...]
+    output_structure: object | None = None

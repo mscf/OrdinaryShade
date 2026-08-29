@@ -6,17 +6,17 @@ import ast
 import inspect
 import textwrap
 
-from .entrypoints import ComputeShader, ExternalFunction, ShaderFunction
+from .entrypoints import ComputeShader, ExternalFunction, GraphicsShader, ShaderFunction
 from .errors import ShaderSyntaxError, ShaderTypeError
 from .ir import (
     Assign, Attribute, Binary, Break, Call, Compare, ComputeModule, Conditional, Continue,
     ExpressionStatement, ForRange, If, Let, Literal, Name, Parameter, Resource,
     Return, Subscript, Unary, While,
-    FunctionModule,
+    FunctionModule, GraphicsModule, StageInterface,
 )
 from .types import (
     AccelerationStructure, FixedArrayType, PushConstants, RuntimeArrayType, ShaderType, StorageBuffer, StorageImage, StorageImageArray, SampledTexture2DArray, SampledTexture3DArray, StorageRecord, StructType,
-    UniformBuffer, QualifiedType,
+    UniformBuffer, QualifiedType, StageIOType,
 )
 
 
@@ -623,6 +623,57 @@ def lower(shader: ComputeShader, *, helpers=(), externals=()) -> ComputeModule:
         helper_modules, shader.capabilities, tuple(structures.values()),
         tuple(external_modules),
     )
+
+
+def lower_graphics(shader: GraphicsShader) -> GraphicsModule:
+    if not isinstance(shader, GraphicsShader):
+        raise ShaderTypeError("graphics compilation expects @vertex or @fragment")
+    function = _source_function(shader)
+    annotations = inspect.get_annotations(shader.function, eval_str=True)
+    parameters = []
+    inputs = []
+    structures = {}
+    value_types = {}
+    for argument in function.args.args:
+        declared = annotations.get(argument.arg)
+        if not isinstance(declared, StageIOType):
+            raise ShaderTypeError(
+                f"graphics input {argument.arg!r} requires location() or builtin()"
+            )
+        parameters.append(Parameter(argument.arg, declared.type.name))
+        inputs.append(StageInterface(argument.arg, declared.type.name, declared.location, declared.builtin))
+        value_types[argument.arg] = declared.type.name
+    declared_return = annotations.get("return")
+    outputs = []
+    output_structure = None
+    if isinstance(declared_return, StageIOType):
+        return_type = declared_return.type
+        outputs.append(StageInterface("result", return_type.name, declared_return.location, declared_return.builtin))
+    elif isinstance(declared_return, StructType):
+        output_structure = declared_return
+        structures[declared_return.name] = declared_return
+        return_type = declared_return
+        for field in declared_return.fields:
+            if not isinstance(field.type, StageIOType):
+                raise ShaderTypeError("graphics output structure fields require location() or builtin()")
+            outputs.append(StageInterface(field.name, field.type.type.name, field.type.location, field.type.builtin))
+    else:
+        raise ShaderTypeError("graphics shader return requires stage output annotation")
+    # The expression type system sees the underlying value type, while the
+    # interface metadata remains attached to the module.
+    lower_structures = {}
+    if output_structure is not None:
+        from .types import StructField
+        lowered = StructType(output_structure.name, tuple(
+            StructField(field.name, field.type.type) for field in output_structure.fields
+        ))
+        lower_structures[lowered.name] = lowered
+        return_type = lowered
+        output_structure = lowered
+    lowerer = _Lowerer(value_types, lower_structures)
+    statements = lowerer.block(function.body)
+    fn = FunctionModule(shader.function.__name__, tuple(parameters), return_type.name, statements)
+    return GraphicsModule(shader.function.__name__, shader.stage, fn, tuple(inputs), tuple(outputs), output_structure)
 
 
 def lower_function(
