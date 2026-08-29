@@ -29,6 +29,11 @@ pipeline = osh.link_graphics(vertex, fragment)
 Compiled results include deterministic content cache keys and Python source
 mappings for diagnostics and host-side shader/pipeline caches.
 
+Graphics entry points may declare portable uniform buffers, storage buffers,
+and storage records alongside location/builtin stage IO. Reflection exposes
+the same descriptor set/binding model for GLSL/SPIR-V and WGSL so a host can
+construct Vulkan descriptor sets or WebGPU bind groups from one declaration.
+
 Reusable typed functions can also be generated for integration into a host
 renderer's existing stages:
 

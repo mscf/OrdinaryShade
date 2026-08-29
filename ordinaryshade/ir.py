@@ -178,3 +178,5 @@ class GraphicsModule:
     inputs: tuple[StageInterface, ...]
     outputs: tuple[StageInterface, ...]
     output_structure: object | None = None
+    resources: tuple[Resource, ...] = ()
+    structures: tuple[object, ...] = ()

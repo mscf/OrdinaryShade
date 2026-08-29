@@ -634,15 +634,31 @@ def lower_graphics(shader: GraphicsShader) -> GraphicsModule:
     inputs = []
     structures = {}
     value_types = {}
+    resources = []
+    used_bindings = set()
+    next_binding = 0
     for argument in function.args.args:
         declared = annotations.get(argument.arg)
-        if not isinstance(declared, StageIOType):
+        if isinstance(declared, StageIOType):
+            parameters.append(Parameter(argument.arg, declared.type.name))
+            inputs.append(StageInterface(argument.arg, declared.type.name, declared.location, declared.builtin))
+            value_types[argument.arg] = declared.type.name
+            continue
+        if not isinstance(declared, (UniformBuffer, StorageBuffer, StorageRecord)):
             raise ShaderTypeError(
-                f"graphics input {argument.arg!r} requires location() or builtin()"
+                f"graphics parameter {argument.arg!r} requires stage IO or a portable buffer resource"
             )
-        parameters.append(Parameter(argument.arg, declared.type.name))
-        inputs.append(StageInterface(argument.arg, declared.type.name, declared.location, declared.builtin))
-        value_types[argument.arg] = declared.type.name
+        binding = declared.binding
+        if binding is None:
+            while (declared.set, next_binding) in used_bindings: next_binding += 1
+            binding = next_binding; next_binding += 1
+        key = (declared.set, binding)
+        if key in used_bindings: raise ShaderTypeError(f"duplicate descriptor set/binding {key}")
+        used_bindings.add(key)
+        resources.append(Resource(argument.arg, declared, declared.set, binding))
+        structure = getattr(declared, "struct_type", getattr(declared, "element_type", None))
+        if isinstance(structure, StructType): structures[structure.name] = structure
+        value_types[argument.arg] = structure.name
     declared_return = annotations.get("return")
     outputs = []
     output_structure = None
@@ -673,7 +689,11 @@ def lower_graphics(shader: GraphicsShader) -> GraphicsModule:
     lowerer = _Lowerer(value_types, lower_structures)
     statements = lowerer.block(function.body)
     fn = FunctionModule(shader.function.__name__, tuple(parameters), return_type.name, statements)
-    return GraphicsModule(shader.function.__name__, shader.stage, fn, tuple(inputs), tuple(outputs), output_structure)
+    resource_structures = tuple(
+        value for name, value in structures.items()
+        if output_structure is None or name != output_structure.name
+    )
+    return GraphicsModule(shader.function.__name__, shader.stage, fn, tuple(inputs), tuple(outputs), output_structure, tuple(resources), resource_structures)
 
 
 def lower_function(

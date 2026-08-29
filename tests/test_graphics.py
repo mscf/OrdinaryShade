@@ -9,6 +9,12 @@ class VertexOutput:
     color: osh.location(osh.vec3, 0)
 
 
+@osh.structure
+class CameraUniforms:
+    tint: osh.vec3
+    scale: osh.f32
+
+
 @osh.vertex
 def triangle_vertex(position: osh.location(osh.vec2, 0)) -> osh.builtin(osh.vec4, "position"):
     return osh.vec4(position, 0.0, 1.0)
@@ -27,6 +33,14 @@ def varying_vertex(position: osh.location(osh.vec2, 0)) -> VertexOutput:
 @osh.fragment
 def varying_fragment(color: osh.location(osh.vec3, 0)) -> osh.location(osh.vec4, 0):
     return osh.vec4(color, 1.0)
+
+
+@osh.fragment
+def uniform_fragment(
+    color: osh.location(osh.vec3, 0),
+    camera: osh.uniform_buffer(CameraUniforms, binding=2),
+) -> osh.location(osh.vec4, 0):
+    return osh.vec4(color * camera.tint * camera.scale, 1.0)
 
 
 def test_glsl_graphics_stages_and_reflection():
@@ -64,3 +78,12 @@ def test_cross_stage_varyings_link_for_both_targets():
         linked = osh.link_graphics(vertex, fragment)
         assert linked.varyings[0].type == "vec3"
         assert linked.varyings[0].location == 0
+
+
+def test_graphics_uniform_resources_emit_and_reflect_for_both_targets():
+    glsl = osh.compile(uniform_fragment, target="glsl")
+    wgsl = osh.compile(uniform_fragment, target="wgsl")
+    assert "layout(std140, set = 0, binding = 2)" in glsl.source
+    assert "@group(0) @binding(2) var<uniform>" in wgsl.source
+    assert glsl.reflection.resources[0].kind == "uniform_buffer"
+    assert glsl.reflection.resources[0].binding == 2

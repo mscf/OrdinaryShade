@@ -133,8 +133,11 @@ def _graphics_reflection(module):
         return StageIOReflection(
             item.name, item.type_name, item.location, item.builtin,
         )
+    resources = _reflection(type("ComputeReflectionView", (), {
+        "resources": module.resources, "workgroup_size": (1, 1, 1),
+    })()).resources
     return ShaderReflection(
-        module.stage, "main", (1, 1, 1), (),
+        module.stage, "main", (1, 1, 1), resources,
         tuple(reflected(item) for item in module.inputs),
         tuple(reflected(item) for item in module.outputs),
     )

@@ -489,6 +489,24 @@ def _io_attribute(item):
 
 def _emit_graphics(module):
     lines = []
+    declared = set()
+    for structure in module.structures:
+        if structure.name in declared: continue
+        declared.add(structure.name)
+        lines.append(f"struct {structure.name} {{")
+        lines.extend(f"    {_identifier(field.name)}: {_field_type(field)}," for field in structure.fields)
+        lines.extend(("}", ""))
+    for resource in module.resources:
+        if isinstance(resource.type, UniformBuffer):
+            lines.append(f"@group({resource.set}) @binding({resource.binding}) var<uniform> {_identifier(resource.name)}: {resource.type.struct_type.name};")
+        elif isinstance(resource.type, StorageBuffer):
+            access = "read" if resource.type.access == "read" else "read_write"
+            lines.append(f"@group({resource.set}) @binding({resource.binding}) var<storage, {access}> {_identifier(resource.name)}: array<{_value_type(resource.type.element_type.name)}>;")
+        elif isinstance(resource.type, StorageRecord):
+            access = "read" if resource.type.access == "read" else "read_write"
+            lines.append(f"@group({resource.set}) @binding({resource.binding}) var<storage, {access}> {_identifier(resource.name)}: {resource.type.struct_type.name};")
+    if module.resources:
+        lines.append("")
     if module.output_structure is not None:
         lines.append(f"struct {module.output_structure.name} {{")
         for field, item in zip(module.output_structure.fields, module.outputs):
