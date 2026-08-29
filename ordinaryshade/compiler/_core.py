@@ -16,7 +16,7 @@ from ..errors import CompilerUnavailableError, ShaderCompilationError, ShaderErr
 from ..lowering import lower, lower_external, lower_function, lower_graphics
 from ..reflection import GraphicsPipelineReflection, ResourceReflection, ShaderReflection, StageIOReflection
 from ..validation import validate_wgsl
-from ..types import AccelerationStructure, PushConstants, RuntimeArrayType, SampledTexture2DArray, SampledTexture3DArray, ShaderType, StorageBuffer, StorageImage, StorageRecord, StructType, UniformBuffer
+from ..types import AccelerationStructure, ComparisonSampler, PushConstants, RuntimeArrayType, SampledDepthTexture2D, SampledTexture2D, SampledTexture2DArray, SampledTexture3DArray, Sampler, ShaderType, StorageBuffer, StorageImage, StorageRecord, StructType, UniformBuffer
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,6 +99,26 @@ def _reflection(module):
         if isinstance(resource.type, SampledTexture2DArray):
             return ResourceReflection(
                 resource.name, "sampled_texture_2d_array", "rgba",
+                "read", resource.set, resource.binding,
+            )
+        if isinstance(resource.type, SampledDepthTexture2D):
+            return ResourceReflection(
+                resource.name, "sampled_depth_texture_2d", "depth",
+                "read", resource.set, resource.binding,
+            )
+        if isinstance(resource.type, SampledTexture2D):
+            return ResourceReflection(
+                resource.name, "sampled_texture_2d", "rgba",
+                "read", resource.set, resource.binding,
+            )
+        if isinstance(resource.type, Sampler):
+            return ResourceReflection(
+                resource.name, "sampler", "sampler",
+                "read", resource.set, resource.binding,
+            )
+        if isinstance(resource.type, ComparisonSampler):
+            return ResourceReflection(
+                resource.name, "comparison_sampler", "sampler_comparison",
                 "read", resource.set, resource.binding,
             )
         if isinstance(resource.type, StorageBuffer):

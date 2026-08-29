@@ -15,7 +15,7 @@ from ..ir import (
     FunctionModule, GraphicsModule, StageInterface,
 )
 from ..types import (
-    AccelerationStructure, FixedArrayType, PushConstants, RuntimeArrayType, ShaderType, StorageBuffer, StorageImage, StorageImageArray, SampledTexture2DArray, SampledTexture3DArray, StorageRecord, StructType,
+    AccelerationStructure, ComparisonSampler, FixedArrayType, PushConstants, RuntimeArrayType, ShaderType, StorageBuffer, StorageImage, StorageImageArray, SampledDepthTexture2D, SampledTexture2D, SampledTexture2DArray, SampledTexture3DArray, Sampler, StorageRecord, StructType,
     UniformBuffer, QualifiedType, StageIOType,
 )
 
@@ -319,6 +319,24 @@ class _Lowerer:
                             "sampled 2D texture array levels() requires an index"
                         )
                     return "int"
+            if owner_type == "sampled_texture_2d" and node.func.attr == "sample_with":
+                if len(node.args) != 2:
+                    raise ShaderTypeError(
+                        "sampled 2D texture sample_with() requires sampler and coordinate"
+                    )
+                return "vec4"
+            if owner_type == "sampled_depth_texture_2d" and node.func.attr == "sample_depth_with":
+                if len(node.args) != 2:
+                    raise ShaderTypeError(
+                        "sampled depth texture sample_depth_with() requires sampler and coordinate"
+                    )
+                return "float"
+            if owner_type == "sampled_depth_texture_2d" and node.func.attr == "sample_compare_with":
+                if len(node.args) != 3:
+                    raise ShaderTypeError(
+                        "sampled depth texture sample_compare_with() requires comparison sampler, coordinate, and reference"
+                    )
+                return "float"
             if owner_type == "rayQueryEXT":
                 if node.func.attr == "proceed":
                     return "bool"
@@ -524,7 +542,7 @@ def lower(shader: ComputeShader, *, helpers=(), externals=()) -> ComputeModule:
         declaration = annotations.get(argument.arg)
         if not isinstance(
             declaration,
-            (AccelerationStructure, StorageImage, SampledTexture2DArray, SampledTexture3DArray, StorageBuffer, StorageRecord, UniformBuffer, PushConstants),
+            (AccelerationStructure, StorageImage, SampledDepthTexture2D, SampledTexture2D, SampledTexture2DArray, SampledTexture3DArray, ComparisonSampler, Sampler, StorageBuffer, StorageRecord, UniformBuffer, PushConstants),
         ):
             raise ShaderTypeError(
                 f"parameter {argument.arg!r} must have an Ordinary Shade resource annotation"
@@ -576,6 +594,14 @@ def lower(shader: ComputeShader, *, helpers=(), externals=()) -> ComputeModule:
             resource_types[resource.name] = "sampled_texture_3d_array"
         elif isinstance(resource.type, SampledTexture2DArray):
             resource_types[resource.name] = "sampled_texture_2d_array"
+        elif isinstance(resource.type, SampledDepthTexture2D):
+            resource_types[resource.name] = "sampled_depth_texture_2d"
+        elif isinstance(resource.type, SampledTexture2D):
+            resource_types[resource.name] = "sampled_texture_2d"
+        elif isinstance(resource.type, Sampler):
+            resource_types[resource.name] = "sampler"
+        elif isinstance(resource.type, ComparisonSampler):
+            resource_types[resource.name] = "comparison_sampler"
         elif isinstance(resource.type, StorageBuffer):
             element_name = resource.type.element_type.name
             resource_types[resource.name] = (
@@ -644,7 +670,7 @@ def lower_graphics(shader: GraphicsShader) -> GraphicsModule:
             inputs.append(StageInterface(argument.arg, declared.type.name, declared.location, declared.builtin))
             value_types[argument.arg] = declared.type.name
             continue
-        if not isinstance(declared, (UniformBuffer, StorageBuffer, StorageRecord)):
+        if not isinstance(declared, (UniformBuffer, StorageBuffer, StorageRecord, SampledDepthTexture2D, SampledTexture2D, ComparisonSampler, Sampler)):
             raise ShaderTypeError(
                 f"graphics parameter {argument.arg!r} requires stage IO or a portable buffer resource"
             )
@@ -658,7 +684,16 @@ def lower_graphics(shader: GraphicsShader) -> GraphicsModule:
         resources.append(Resource(argument.arg, declared, declared.set, binding))
         structure = getattr(declared, "struct_type", getattr(declared, "element_type", None))
         if isinstance(structure, StructType): structures[structure.name] = structure
-        value_types[argument.arg] = structure.name
+        if isinstance(declared, SampledDepthTexture2D):
+            value_types[argument.arg] = "sampled_depth_texture_2d"
+        elif isinstance(declared, SampledTexture2D):
+            value_types[argument.arg] = "sampled_texture_2d"
+        elif isinstance(declared, Sampler):
+            value_types[argument.arg] = "sampler"
+        elif isinstance(declared, ComparisonSampler):
+            value_types[argument.arg] = "comparison_sampler"
+        else:
+            value_types[argument.arg] = structure.name
     declared_return = annotations.get("return")
     outputs = []
     output_structure = None
@@ -677,7 +712,10 @@ def lower_graphics(shader: GraphicsShader) -> GraphicsModule:
         raise ShaderTypeError("graphics shader return requires stage output annotation")
     # The expression type system sees the underlying value type, while the
     # interface metadata remains attached to the module.
-    lower_structures = {}
+    # Resource-backed structures participate in expression typing too.  Keep
+    # them available so a uniform field can be assigned locally and swizzled,
+    # not merely embedded directly in a larger expression.
+    lower_structures = dict(structures)
     if output_structure is not None:
         from ..types import StructField
         lowered = StructType(output_structure.name, tuple(

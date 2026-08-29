@@ -43,6 +43,45 @@ def uniform_fragment(
     return osh.vec4(color * camera.tint * camera.scale, 1.0)
 
 
+@osh.fragment
+def assigned_uniform_field_fragment(
+    color: osh.location(osh.vec3, 0),
+    camera: osh.uniform_buffer(CameraUniforms, binding=2),
+) -> osh.location(osh.vec4, 0):
+    tint = camera.tint
+    red_green = tint.xy
+    return osh.vec4(color * osh.vec3(red_green, tint.z), 1.0)
+
+
+@osh.fragment
+def textured_fragment(
+    uv: osh.location(osh.vec2, 0),
+    image: osh.sampled_texture_2d(binding=3),
+    filtering: osh.sampler(binding=4),
+) -> osh.location(osh.vec4, 0):
+    return image.sample_with(filtering, uv)
+
+
+@osh.fragment
+def depth_textured_fragment(
+    uv: osh.location(osh.vec2, 0),
+    image: osh.sampled_depth_texture_2d(binding=3),
+    filtering: osh.sampler(binding=4),
+) -> osh.location(osh.vec4, 0):
+    depth = image.sample_depth_with(filtering, uv)
+    return osh.vec4(osh.vec3(depth), 1.0)
+
+
+@osh.fragment
+def compared_depth_fragment(
+    uv: osh.location(osh.vec2, 0),
+    image: osh.sampled_depth_texture_2d(binding=3),
+    comparison: osh.comparison_sampler(binding=4),
+) -> osh.location(osh.vec4, 0):
+    visibility = image.sample_compare_with(comparison, uv, 0.5)
+    return osh.vec4(osh.vec3(visibility), 1.0)
+
+
 def test_glsl_graphics_stages_and_reflection():
     vertex = osh.compile(triangle_vertex)
     fragment = osh.compile(triangle_fragment)
@@ -87,3 +126,48 @@ def test_graphics_uniform_resources_emit_and_reflect_for_both_targets():
     assert "@group(0) @binding(2) var<uniform>" in wgsl.source
     assert glsl.reflection.resources[0].kind == "uniform_buffer"
     assert glsl.reflection.resources[0].binding == 2
+
+
+def test_uniform_fields_can_be_assigned_and_swizzled():
+    for target in ("glsl", "wgsl"):
+        result = osh.compile(assigned_uniform_field_fragment, target=target)
+        assert "tint" in result.source
+
+
+def test_separate_texture_and_sampler_emit_for_both_graphics_targets():
+    glsl = osh.compile(textured_fragment, target="glsl")
+    wgsl = osh.compile(textured_fragment, target="wgsl")
+    assert "uniform texture2D image;" in glsl.source
+    assert "uniform sampler filtering;" in glsl.source
+    assert "texture(sampler2D(image, filtering), uv)" in glsl.source
+    assert "var image: texture_2d<f32>;" in wgsl.source
+    assert "var filtering: sampler;" in wgsl.source
+    assert "textureSample(image, filtering, uv)" in wgsl.source
+    assert [item.kind for item in glsl.reflection.resources] == [
+        "sampled_texture_2d", "sampler",
+    ]
+
+
+def test_depth_texture_emits_scalar_sampling_for_both_graphics_targets():
+    glsl = osh.compile(depth_textured_fragment, target="glsl")
+    validate = shutil.which("naga") is not None
+    wgsl = osh.compile(depth_textured_fragment, target="wgsl", validate=validate)
+    assert "uniform texture2D image;" in glsl.source
+    assert "texture(sampler2D(image, filtering), uv).r" in glsl.source
+    assert "var image: texture_depth_2d;" in wgsl.source
+    assert "textureSample(image, filtering, uv)" in wgsl.source
+    assert [item.kind for item in glsl.reflection.resources] == [
+        "sampled_depth_texture_2d", "sampler",
+    ]
+
+
+def test_depth_comparison_sampler_emits_for_both_graphics_targets():
+    glsl = osh.compile(compared_depth_fragment, target="glsl")
+    validate = shutil.which("naga") is not None
+    wgsl = osh.compile(compared_depth_fragment, target="wgsl", validate=validate)
+    assert "sampler2DShadow(image, comparison)" in glsl.source
+    assert "var comparison: sampler_comparison;" in wgsl.source
+    assert "textureSampleCompare(image, comparison, uv, 0.5)" in wgsl.source
+    assert [item.kind for item in glsl.reflection.resources] == [
+        "sampled_depth_texture_2d", "comparison_sampler",
+    ]

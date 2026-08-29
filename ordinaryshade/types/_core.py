@@ -438,6 +438,66 @@ def sampled_texture_2d_array(count: int, *, set=0, binding=None):
 
 
 @dataclass(frozen=True, slots=True)
+class SampledTexture2D:
+    """A portable separately bound two-dimensional sampled texture."""
+    set: int = 0
+    binding: int | None = None
+
+    def __post_init__(self):
+        if self.set < 0 or (self.binding is not None and self.binding < 0):
+            raise ShaderTypeError("descriptor set and binding must be non-negative")
+
+
+def sampled_texture_2d(*, set=0, binding=None):
+    return SampledTexture2D(set, binding)
+
+
+@dataclass(frozen=True, slots=True)
+class SampledDepthTexture2D:
+    """A portable separately bound two-dimensional depth texture."""
+    set: int = 0
+    binding: int | None = None
+
+    def __post_init__(self):
+        if self.set < 0 or (self.binding is not None and self.binding < 0):
+            raise ShaderTypeError("descriptor set and binding must be non-negative")
+
+
+def sampled_depth_texture_2d(*, set=0, binding=None):
+    return SampledDepthTexture2D(set, binding)
+
+
+@dataclass(frozen=True, slots=True)
+class Sampler:
+    """A portable filtering sampler resource."""
+    set: int = 0
+    binding: int | None = None
+
+    def __post_init__(self):
+        if self.set < 0 or (self.binding is not None and self.binding < 0):
+            raise ShaderTypeError("descriptor set and binding must be non-negative")
+
+
+def sampler(*, set=0, binding=None):
+    return Sampler(set, binding)
+
+
+@dataclass(frozen=True, slots=True)
+class ComparisonSampler:
+    """A portable depth-comparison sampler resource."""
+    set: int = 0
+    binding: int | None = None
+
+    def __post_init__(self):
+        if self.set < 0 or (self.binding is not None and self.binding < 0):
+            raise ShaderTypeError("descriptor set and binding must be non-negative")
+
+
+def comparison_sampler(*, set=0, binding=None):
+    return ComparisonSampler(set, binding)
+
+
+@dataclass(frozen=True, slots=True)
 class AccelerationStructure:
     set: int = 0
     binding: int | None = None

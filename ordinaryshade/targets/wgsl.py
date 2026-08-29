@@ -9,7 +9,7 @@ from ..ir import (
     Return, Subscript, Unary, While, GraphicsModule,
 )
 from ..types import (
-    AccelerationStructure, FixedArrayType, PushConstants, RuntimeArrayType, SampledTexture2DArray, SampledTexture3DArray, StorageBuffer, StorageImage, StorageImageArray, StorageRecord, StructType,
+    AccelerationStructure, ComparisonSampler, FixedArrayType, PushConstants, RuntimeArrayType, SampledDepthTexture2D, SampledTexture2D, SampledTexture2DArray, SampledTexture3DArray, Sampler, StorageBuffer, StorageImage, StorageImageArray, StorageRecord, StructType,
     UniformBuffer,
 )
 
@@ -247,6 +247,15 @@ def _expression(value):
         arguments = ", ".join(_expression(item) for item in value.arguments)
         if isinstance(value.function, Attribute):
             owner = _expression(value.function.value)
+            if value.function.attribute == "sample_with" and len(value.arguments) == 2:
+                sample, coordinate = map(_expression, value.arguments)
+                return f"textureSample({owner}, {sample}, {coordinate})"
+            if value.function.attribute == "sample_depth_with" and len(value.arguments) == 2:
+                sample, coordinate = map(_expression, value.arguments)
+                return f"textureSample({owner}, {sample}, {coordinate})"
+            if value.function.attribute == "sample_compare_with" and len(value.arguments) == 3:
+                sample, coordinate, reference = map(_expression, value.arguments)
+                return f"textureSampleCompare({owner}, {sample}, {coordinate}, {reference})"
             if value.function.attribute == "load":
                 return f"textureLoad({owner}, {arguments})"
             if value.function.attribute == "store":
@@ -410,7 +419,27 @@ def emit_wgsl(module):
         )
         lines.extend(("}", ""))
     for resource in module.resources:
-        if isinstance(resource.type, StorageImage):
+        if isinstance(resource.type, SampledDepthTexture2D):
+            lines.append(
+                f"@group({resource.set}) @binding({resource.binding}) "
+                f"var {_identifier(resource.name)}: texture_depth_2d;"
+            )
+        elif isinstance(resource.type, SampledTexture2D):
+            lines.append(
+                f"@group({resource.set}) @binding({resource.binding}) "
+                f"var {_identifier(resource.name)}: texture_2d<f32>;"
+            )
+        elif isinstance(resource.type, ComparisonSampler):
+            lines.append(
+                f"@group({resource.set}) @binding({resource.binding}) "
+                f"var {_identifier(resource.name)}: sampler_comparison;"
+            )
+        elif isinstance(resource.type, Sampler):
+            lines.append(
+                f"@group({resource.set}) @binding({resource.binding}) "
+                f"var {_identifier(resource.name)}: sampler;"
+            )
+        elif isinstance(resource.type, StorageImage):
             try:
                 format_name = _STORAGE_FORMATS[resource.type.format]
             except KeyError as error:
@@ -497,7 +526,27 @@ def _emit_graphics(module):
         lines.extend(f"    {_identifier(field.name)}: {_field_type(field)}," for field in structure.fields)
         lines.extend(("}", ""))
     for resource in module.resources:
-        if isinstance(resource.type, UniformBuffer):
+        if isinstance(resource.type, SampledDepthTexture2D):
+            lines.append(
+                f"@group({resource.set}) @binding({resource.binding}) "
+                f"var {_identifier(resource.name)}: texture_depth_2d;"
+            )
+        elif isinstance(resource.type, SampledTexture2D):
+            lines.append(
+                f"@group({resource.set}) @binding({resource.binding}) "
+                f"var {_identifier(resource.name)}: texture_2d<f32>;"
+            )
+        elif isinstance(resource.type, ComparisonSampler):
+            lines.append(
+                f"@group({resource.set}) @binding({resource.binding}) "
+                f"var {_identifier(resource.name)}: sampler_comparison;"
+            )
+        elif isinstance(resource.type, Sampler):
+            lines.append(
+                f"@group({resource.set}) @binding({resource.binding}) "
+                f"var {_identifier(resource.name)}: sampler;"
+            )
+        elif isinstance(resource.type, UniformBuffer):
             lines.append(f"@group({resource.set}) @binding({resource.binding}) var<uniform> {_identifier(resource.name)}: {resource.type.struct_type.name};")
         elif isinstance(resource.type, StorageBuffer):
             access = "read" if resource.type.access == "read" else "read_write"

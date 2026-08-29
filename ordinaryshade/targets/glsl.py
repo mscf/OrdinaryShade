@@ -9,7 +9,7 @@ from ..ir import (
     Return, Subscript, Unary, While, GraphicsModule,
 )
 from ..types import (
-    AccelerationStructure, FixedArrayType, PushConstants, RuntimeArrayType, SampledTexture2DArray, SampledTexture3DArray, StorageBuffer, StorageImage, StorageImageArray, StorageRecord, StructType,
+    AccelerationStructure, ComparisonSampler, FixedArrayType, PushConstants, RuntimeArrayType, SampledDepthTexture2D, SampledTexture2D, SampledTexture2DArray, SampledTexture3DArray, Sampler, StorageBuffer, StorageImage, StorageImageArray, StorageRecord, StructType,
     UniformBuffer,
 )
 
@@ -179,6 +179,15 @@ def _expression(value):
             if value.function.attribute == "sample" and len(value.arguments) == 2:
                 index, coordinate = map(_expression, value.arguments)
                 return f"texture({owner}[{index}], {coordinate}).r"
+            if value.function.attribute == "sample_with" and len(value.arguments) == 2:
+                sample, coordinate = map(_expression, value.arguments)
+                return f"texture(sampler2D({owner}, {sample}), {coordinate})"
+            if value.function.attribute == "sample_depth_with" and len(value.arguments) == 2:
+                sample, coordinate = map(_expression, value.arguments)
+                return f"texture(sampler2D({owner}, {sample}), {coordinate}).r"
+            if value.function.attribute == "sample_compare_with" and len(value.arguments) == 3:
+                sample, coordinate, reference = map(_expression, value.arguments)
+                return f"texture(sampler2DShadow({owner}, {sample}), vec3({coordinate}, {reference}))"
             if value.function.attribute == "sample_lod" and len(value.arguments) == 3:
                 index, coordinate, lod = map(_expression, value.arguments)
                 return f"textureLod({owner}[nonuniformEXT({index})], {coordinate}, {lod})"
@@ -373,6 +382,16 @@ def emit_glsl(module, declaration=False):
                 f"uniform sampler2D {_identifier(resource.name)}"
                 f"[{resource.type.count}];"
             )
+        elif isinstance(resource.type, (SampledDepthTexture2D, SampledTexture2D)):
+            lines.append(
+                f"layout(set = {resource.set}, binding = {resource.binding}) "
+                f"uniform texture2D {_identifier(resource.name)};"
+            )
+        elif isinstance(resource.type, (ComparisonSampler, Sampler)):
+            lines.append(
+                f"layout(set = {resource.set}, binding = {resource.binding}) "
+                f"uniform sampler {_identifier(resource.name)};"
+            )
         elif isinstance(resource.type, StorageImageArray):
             access = {
                 "read": "readonly ", "write": "writeonly ", "read_write": "",
@@ -502,7 +521,17 @@ def _emit_graphics(module):
         lines.extend(f"    {_field_declaration(field)}" for field in structure.fields)
         lines.extend(("};", ""))
     for resource in module.resources:
-        if isinstance(resource.type, UniformBuffer):
+        if isinstance(resource.type, (SampledDepthTexture2D, SampledTexture2D)):
+            lines.append(
+                f"layout(set = {resource.set}, binding = {resource.binding}) "
+                f"uniform texture2D {_identifier(resource.name)};"
+            )
+        elif isinstance(resource.type, (ComparisonSampler, Sampler)):
+            lines.append(
+                f"layout(set = {resource.set}, binding = {resource.binding}) "
+                f"uniform sampler {_identifier(resource.name)};"
+            )
+        elif isinstance(resource.type, UniformBuffer):
             lines.append(f"layout(std140, set = {resource.set}, binding = {resource.binding}) uniform {_identifier(resource.name)}_Block")
             lines.append("{")
             lines.extend(f"    {field.type.name} {_identifier(field.name)};" for field in resource.type.struct_type.fields)
