@@ -171,3 +171,25 @@ def test_depth_comparison_sampler_emits_for_both_graphics_targets():
     assert [item.kind for item in glsl.reflection.resources] == [
         "sampled_depth_texture_2d", "comparison_sampler",
     ]
+
+
+def test_graphics_structured_storage_buffers_are_indexable():
+    @osh.structure
+    class Surface:
+        color: osh.vec4
+
+    @osh.fragment
+    def material_fragment(
+        index: osh.location(osh.f32, 0),
+        surfaces: osh.storage_buffer(Surface, access="read", binding=5),
+    ) -> osh.location(osh.vec4, 0):
+        color = surfaces[osh.u32(index)].color
+        return color
+
+    validate = shutil.which("naga") is not None
+    glsl = osh.compile(material_fragment, target="glsl")
+    wgsl = osh.compile(material_fragment, target="wgsl", validate=validate)
+    assert "readonly buffer surfaces_Block" in glsl.source
+    assert "surfaces[uint(index)].color" in glsl.source
+    assert "var<storage, read> surfaces: array<Surface>" in wgsl.source
+    assert "surfaces[u32(index)].color" in wgsl.source

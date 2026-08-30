@@ -692,6 +692,8 @@ def lower_graphics(shader: GraphicsShader) -> GraphicsModule:
             value_types[argument.arg] = "sampler"
         elif isinstance(declared, ComparisonSampler):
             value_types[argument.arg] = "comparison_sampler"
+        elif isinstance(declared, StorageBuffer):
+            value_types[argument.arg] = f"storage_buffer:{structure.name}"
         else:
             value_types[argument.arg] = structure.name
     declared_return = annotations.get("return")
