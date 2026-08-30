@@ -372,6 +372,20 @@ class CompilerTests(unittest.TestCase):
         self.assertIn("let doubled: f32 = (value * 2.0);", wgsl.source)
         self.assertIn("if ((doubled <= cutoff))", wgsl.source)
 
+    def test_wgsl_reassigned_local_is_emitted_as_mutable(self):
+        @osh.function
+        def accumulate(value: osh.f32) -> osh.f32:
+            result = value
+            for index in range(4):
+                result = result + osh.f32(index)
+            return result
+
+        wgsl = osh.compile_function(
+            accumulate, target="wgsl", validate=NAGA_AVAILABLE,
+        )
+        self.assertIn("var result: f32 = value;", wgsl.source)
+        self.assertIn("result = (result + f32(index));", wgsl.source)
+
     def test_if_rejects_vector_condition(self):
         @osh.function
         def invalid(color: osh.vec3) -> osh.vec3:
@@ -995,6 +1009,23 @@ class CompilerTests(unittest.TestCase):
         wgsl = osh.compile_function(accumulate, target="wgsl").source
         self.assertIn("var entries: array<f32, 16>;", wgsl)
         self.assertIn("entries[index] = value;", wgsl)
+
+    def test_constant_ranges_can_be_explicitly_unrolled(self):
+        @osh.function
+        def weighted_sum(value: osh.f32) -> osh.f32:
+            result = 0.0
+            for index in osh.unroll_range(1, 4):
+                result = result + value * osh.f32(index)
+            return result
+
+        glsl = osh.compile_function(weighted_sum).source
+        self.assertNotIn("for (", glsl)
+        self.assertEqual(glsl.count("const int index ="), 3)
+        self.assertIn("while (false);", glsl)
+        wgsl = osh.compile_function(weighted_sum, target="wgsl").source
+        self.assertNotIn("for (", wgsl)
+        self.assertEqual(wgsl.count("let index: i32 ="), 3)
+        self.assertIn("loop {", wgsl)
 
     def test_workgroup_validation(self):
         with self.assertRaises(osh.ShaderTypeError):

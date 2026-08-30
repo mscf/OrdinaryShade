@@ -250,9 +250,15 @@ def _expression(value):
             if value.function.attribute == "sample_with" and len(value.arguments) == 2:
                 sample, coordinate = map(_expression, value.arguments)
                 return f"textureSample({owner}, {sample}, {coordinate})"
+            if value.function.attribute == "sample_level_with" and len(value.arguments) == 3:
+                sample, coordinate, level = map(_expression, value.arguments)
+                return f"textureSampleLevel({owner}, {sample}, {coordinate}, {level})"
             if value.function.attribute == "sample_depth_with" and len(value.arguments) == 2:
                 sample, coordinate = map(_expression, value.arguments)
                 return f"textureSample({owner}, {sample}, {coordinate})"
+            if value.function.attribute == "sample_depth_level_with" and len(value.arguments) == 3:
+                sample, coordinate, level = map(_expression, value.arguments)
+                return f"textureSampleLevel({owner}, {sample}, {coordinate}, {level})"
             if value.function.attribute == "sample_compare_with" and len(value.arguments) == 3:
                 sample, coordinate, reference = map(_expression, value.arguments)
                 return f"textureSampleCompare({owner}, {sample}, {coordinate}, {reference})"
@@ -266,7 +272,30 @@ def _expression(value):
     raise ShaderTypeError(f"WGSL backend cannot emit {type(value).__name__}")
 
 
-def _statement(value, indent=1):
+def _assignment_root(value):
+    if isinstance(value, Name):
+        return value.value
+    if isinstance(value, (Attribute, Subscript)):
+        return _assignment_root(value.value)
+    return None
+
+
+def _mutable_names(statements):
+    names = set()
+    for statement in statements:
+        if isinstance(statement, Assign):
+            name = _assignment_root(statement.target)
+            if name is not None:
+                names.add(name)
+        elif isinstance(statement, (While, ForRange)):
+            names.update(_mutable_names(statement.body))
+        elif isinstance(statement, If):
+            names.update(_mutable_names(statement.body))
+            names.update(_mutable_names(statement.else_body))
+    return frozenset(names)
+
+
+def _statement(value, indent=1, mutable=frozenset()):
     prefix = "    " * indent
     if isinstance(value, Let):
         if value.type_name.startswith("shared:"):
@@ -280,8 +309,9 @@ def _statement(value, indent=1):
         expression = _expression(value.value)
         if expression == "global_invocation_id.xy":
             expression = f"vec2<i32>({expression})"
+        qualifier = "var" if value.name in mutable else "let"
         return [
-            f"{prefix}let {_identifier(value.name)}: "
+            f"{prefix}{qualifier} {_identifier(value.name)}: "
             f"{_value_type(value.type_name)} = {expression};"
         ]
     if isinstance(value, ExpressionStatement):
@@ -296,12 +326,26 @@ def _statement(value, indent=1):
     if isinstance(value, While):
         lines = [f"{prefix}while ({_expression(value.condition)}) {{"]
         for statement in value.body:
-            lines.extend(_statement(statement, indent + 1))
+            lines.extend(_statement(statement, indent + 1, mutable))
         lines.append(f"{prefix}}}")
         return lines
     if isinstance(value, Assign):
         return [f"{prefix}{_expression(value.target)} = {_expression(value.value)};"]
     if isinstance(value, ForRange):
+        if value.unroll:
+            lines = [f"{prefix}loop {{"]
+            for iteration in range(
+                int(value.start.value), int(value.stop.value), value.step,
+            ):
+                lines.extend((
+                    f"{prefix}    {{",
+                    f"{prefix}        let {_identifier(value.variable)}: i32 = {iteration};",
+                ))
+                for statement in value.body:
+                    lines.extend(_statement(statement, indent + 2, mutable))
+                lines.append(f"{prefix}    }}")
+            lines.extend((f"{prefix}    break;", f"{prefix}}}"))
+            return lines
         condition = "<" if value.step > 0 else ">"
         variable = _identifier(value.variable)
         start = _expression(value.start)
@@ -311,18 +355,18 @@ def _statement(value, indent=1):
             f"{variable} {condition} {stop}; {variable} += {value.step}) {{"
         ]
         for statement in value.body:
-            lines.extend(_statement(statement, indent + 1))
+            lines.extend(_statement(statement, indent + 1, mutable))
         lines.append(f"{prefix}}}")
         return lines
     if isinstance(value, If):
         lines = [f"{prefix}if ({_expression(value.condition)}) {{"]
         for statement in value.body:
-            lines.extend(_statement(statement, indent + 1))
+            lines.extend(_statement(statement, indent + 1, mutable))
         lines.append(f"{prefix}}}")
         if value.else_body:
             lines[-1] += " else {"
             for statement in value.else_body:
-                lines.extend(_statement(statement, indent + 1))
+                lines.extend(_statement(statement, indent + 1, mutable))
             lines.append(f"{prefix}}}")
         return lines
     raise ShaderTypeError(f"WGSL backend cannot emit {type(value).__name__}")
@@ -356,8 +400,9 @@ def emit_wgsl(module):
             ),
             f"fn {_identifier(module.name)}({parameters}){result} {{",
         ]
+        mutable = _mutable_names(module.statements)
         for statement in module.statements:
-            lines.extend(_statement(statement))
+            lines.extend(_statement(statement, mutable=mutable))
         lines.extend(("}", ""))
         return "\n".join(lines)
 
@@ -506,14 +551,19 @@ def emit_wgsl(module):
         "    @builtin(num_workgroups) num_workgroups: vec3<u32>,",
         ") {",
     ))
+    mutable = _mutable_names(module.statements)
     for statement in module.statements:
-        lines.extend(_statement(statement))
+        lines.extend(_statement(statement, mutable=mutable))
     lines.extend(("}", ""))
     return "\n".join(lines)
 
 
 def _io_attribute(item):
-    return f"@location({item.location})" if item.location is not None else f"@builtin({item.builtin})"
+    attribute = (
+        f"@location({item.location})" if item.location is not None
+        else f"@builtin({item.builtin})"
+    )
+    return f"@invariant {attribute}" if item.invariant else attribute
 
 
 def _emit_graphics(module):
@@ -577,7 +627,8 @@ def _emit_graphics(module):
         result = f" -> {_io_attribute(item)} {_value_type(item.type_name)}"
     lines.append(f"@{module.stage}")
     lines.append(f"fn main(\n{parameters}\n){result} {{")
+    mutable = _mutable_names(module.function.statements)
     for statement in module.function.statements:
-        lines.extend(_statement(statement))
+        lines.extend(_statement(statement, mutable=mutable))
     lines.extend(("}", ""))
     return "\n".join(lines)

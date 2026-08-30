@@ -133,6 +133,7 @@ class ForRange(Statement):
     stop: Expression
     step: int
     body: tuple[Statement, ...]
+    unroll: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -168,6 +169,7 @@ class StageInterface:
     type_name: str
     location: int | None = None
     builtin: str | None = None
+    invariant: bool = False
 
 
 @dataclass(frozen=True, slots=True)

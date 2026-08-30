@@ -325,10 +325,22 @@ class _Lowerer:
                         "sampled 2D texture sample_with() requires sampler and coordinate"
                     )
                 return "vec4"
+            if owner_type == "sampled_texture_2d" and node.func.attr == "sample_level_with":
+                if len(node.args) != 3:
+                    raise ShaderTypeError(
+                        "sampled 2D texture sample_level_with() requires sampler, coordinate, and level"
+                    )
+                return "vec4"
             if owner_type == "sampled_depth_texture_2d" and node.func.attr == "sample_depth_with":
                 if len(node.args) != 2:
                     raise ShaderTypeError(
                         "sampled depth texture sample_depth_with() requires sampler and coordinate"
+                    )
+                return "float"
+            if owner_type == "sampled_depth_texture_2d" and node.func.attr == "sample_depth_level_with":
+                if len(node.args) != 3:
+                    raise ShaderTypeError(
+                        "sampled depth texture sample_depth_level_with() requires sampler, coordinate, and level"
                     )
                 return "float"
             if owner_type == "sampled_depth_texture_2d" and node.func.attr == "sample_compare_with":
@@ -436,13 +448,28 @@ class _Lowerer:
             call = node.iter
             if not (
                 isinstance(call, ast.Call)
-                and isinstance(call.func, ast.Name)
-                and call.func.id == "range"
+                and (
+                    isinstance(call.func, ast.Name)
+                    and call.func.id in {"range", "unroll_range"}
+                    or isinstance(call.func, ast.Attribute)
+                    and call.func.attr == "unroll_range"
+                )
                 and not call.keywords
                 and 1 <= len(call.args) <= 3
             ):
                 raise ShaderSyntaxError(
-                    f"shader loops require range() with one to three arguments at {_location(node.iter)}"
+                    f"shader loops require range() or unroll_range() with one to three arguments at {_location(node.iter)}"
+                )
+            unroll = (
+                getattr(call.func, "id", None) == "unroll_range"
+                or getattr(call.func, "attr", None) == "unroll_range"
+            )
+            if unroll and any(
+                isinstance(child, ast.Continue)
+                for statement in node.body for child in ast.walk(statement)
+            ):
+                raise ShaderSyntaxError(
+                    "unroll_range() loops cannot contain continue"
                 )
             if len(call.args) == 1:
                 start_node, stop_node, step = ast.Constant(0), call.args[0], 1
@@ -465,9 +492,17 @@ class _Lowerer:
             self.value_types[node.target.id] = "int"
             body = self.block(node.body)
             self.value_types = original_types
+            if unroll and not all(
+                isinstance(bound, ast.Constant)
+                and isinstance(bound.value, int)
+                for bound in (start_node, stop_node)
+            ):
+                raise ShaderSyntaxError(
+                    "unroll_range() bounds must be constant integers"
+                )
             return ForRange(
                 node.target.id, self.expression(start_node),
-                self.expression(stop_node), step, body,
+                self.expression(stop_node), step, body, unroll,
             )
         if isinstance(node, ast.If):
             condition_type = self.expression_type(node.test)
@@ -673,7 +708,7 @@ def lower_graphics(shader: GraphicsShader, *, helpers=()) -> GraphicsModule:
         declared = annotations.get(argument.arg)
         if isinstance(declared, StageIOType):
             parameters.append(Parameter(argument.arg, declared.type.name))
-            inputs.append(StageInterface(argument.arg, declared.type.name, declared.location, declared.builtin))
+            inputs.append(StageInterface(argument.arg, declared.type.name, declared.location, declared.builtin, declared.invariant))
             value_types[argument.arg] = declared.type.name
             continue
         if not isinstance(declared, (UniformBuffer, StorageBuffer, StorageRecord, SampledDepthTexture2D, SampledTexture2D, ComparisonSampler, Sampler)):
@@ -707,7 +742,7 @@ def lower_graphics(shader: GraphicsShader, *, helpers=()) -> GraphicsModule:
     output_structure = None
     if isinstance(declared_return, StageIOType):
         return_type = declared_return.type
-        outputs.append(StageInterface("result", return_type.name, declared_return.location, declared_return.builtin))
+        outputs.append(StageInterface("result", return_type.name, declared_return.location, declared_return.builtin, declared_return.invariant))
     elif isinstance(declared_return, StructType):
         output_structure = declared_return
         structures[declared_return.name] = declared_return
@@ -715,7 +750,7 @@ def lower_graphics(shader: GraphicsShader, *, helpers=()) -> GraphicsModule:
         for field in declared_return.fields:
             if not isinstance(field.type, StageIOType):
                 raise ShaderTypeError("graphics output structure fields require location() or builtin()")
-            outputs.append(StageInterface(field.name, field.type.type.name, field.type.location, field.type.builtin))
+            outputs.append(StageInterface(field.name, field.type.type.name, field.type.location, field.type.builtin, field.type.invariant))
     else:
         raise ShaderTypeError("graphics shader return requires stage output annotation")
     # The expression type system sees the underlying value type, while the

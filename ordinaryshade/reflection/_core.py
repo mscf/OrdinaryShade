@@ -19,6 +19,7 @@ class StageIOReflection:
     type: str
     location: int | None = None
     builtin: str | None = None
+    invariant: bool = False
 
 
 @dataclass(frozen=True, slots=True)

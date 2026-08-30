@@ -35,6 +35,7 @@ class StageIOType:
     type: ShaderType | StructType
     location: int | None = None
     builtin: str | None = None
+    invariant: bool = False
 
     @property
     def name(self):
@@ -56,6 +57,20 @@ def builtin(value_type, name: str):
     if name not in supported:
         raise ShaderTypeError(f"unsupported graphics builtin {name!r}")
     return StageIOType(value_type, builtin=name)
+
+
+def invariant(stage_io):
+    """Require an output to produce invariant values across pipelines.
+
+    This is primarily useful for vertex ``position`` outputs reused by depth
+    and shading passes.  Backends emit the target language's invariant
+    interface qualifier rather than relying on optimizer coincidence.
+    """
+    if not isinstance(stage_io, StageIOType):
+        raise ShaderTypeError("invariant() requires a location() or builtin() type")
+    return StageIOType(
+        stage_io.type, stage_io.location, stage_io.builtin, invariant=True,
+    )
 
 
 def inout(value_type):

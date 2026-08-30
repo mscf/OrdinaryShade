@@ -182,9 +182,15 @@ def _expression(value):
             if value.function.attribute == "sample_with" and len(value.arguments) == 2:
                 sample, coordinate = map(_expression, value.arguments)
                 return f"texture(sampler2D({owner}, {sample}), {coordinate})"
+            if value.function.attribute == "sample_level_with" and len(value.arguments) == 3:
+                sample, coordinate, level = map(_expression, value.arguments)
+                return f"textureLod(sampler2D({owner}, {sample}), {coordinate}, {level})"
             if value.function.attribute == "sample_depth_with" and len(value.arguments) == 2:
                 sample, coordinate = map(_expression, value.arguments)
                 return f"texture(sampler2D({owner}, {sample}), {coordinate}).r"
+            if value.function.attribute == "sample_depth_level_with" and len(value.arguments) == 3:
+                sample, coordinate, level = map(_expression, value.arguments)
+                return f"textureLod(sampler2D({owner}, {sample}), {coordinate}, {level}).r"
             if value.function.attribute == "sample_compare_with" and len(value.arguments) == 3:
                 sample, coordinate, reference = map(_expression, value.arguments)
                 return f"texture(sampler2DShadow({owner}, {sample}), vec3({coordinate}, {reference}))"
@@ -241,6 +247,22 @@ def _statement(value, indent=1):
     if isinstance(value, Assign):
         return [f"{prefix}{_expression(value.target)} = {_expression(value.value)};"]
     if isinstance(value, ForRange):
+        if value.unroll:
+            # A single-iteration wrapper preserves source-level `break`:
+            # breaking any expanded iteration exits the entire unrolled loop.
+            lines = [f"{prefix}do", f"{prefix}{{"]
+            for iteration in range(
+                int(value.start.value), int(value.stop.value), value.step,
+            ):
+                lines.extend((
+                    f"{prefix}    {{",
+                    f"{prefix}        const int {_identifier(value.variable)} = {iteration};",
+                ))
+                for statement in value.body:
+                    lines.extend(_statement(statement, indent + 2))
+                lines.append(f"{prefix}    }}")
+            lines.extend((f"{prefix}}}", f"{prefix}while (false);"))
+            return lines
         condition = "<" if value.step > 0 else ">"
         start = _expression(value.start)
         stop = _expression(value.stop)
@@ -565,6 +587,8 @@ def _emit_graphics(module):
     for item in module.outputs:
         if item.location is not None:
             lines.append(f"layout(location = {item.location}) out {item.type_name} _osh_out_{item.name};")
+        elif item.invariant and item.builtin == "position":
+            lines.append("invariant gl_Position;")
     lines.append("")
     lines.extend(emit_glsl(module.function).rstrip().splitlines())
     lines.extend(("", "void main()", "{"))

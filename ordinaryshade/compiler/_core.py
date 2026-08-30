@@ -152,6 +152,7 @@ def _graphics_reflection(module):
     def reflected(item):
         return StageIOReflection(
             item.name, item.type_name, item.location, item.builtin,
+            item.invariant,
         )
     resources = _reflection(type("ComputeReflectionView", (), {
         "resources": module.resources, "workgroup_size": (1, 1, 1),

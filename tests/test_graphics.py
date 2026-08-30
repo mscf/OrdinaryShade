@@ -10,6 +10,11 @@ class VertexOutput:
 
 
 @osh.structure
+class InvariantVertexOutput:
+    position: osh.invariant(osh.builtin(osh.vec4, "position"))
+
+
+@osh.structure
 class CameraUniforms:
     tint: osh.vec3
     scale: osh.f32
@@ -44,6 +49,13 @@ def helper_fragment(color: osh.location(osh.vec3, 0)) -> osh.location(osh.vec4, 
 @osh.vertex
 def varying_vertex(position: osh.location(osh.vec2, 0)) -> VertexOutput:
     return VertexOutput(osh.vec4(position, 0.0, 1.0), osh.vec3(1.0, 0.5, 0.2))
+
+
+@osh.vertex
+def invariant_vertex(
+    position: osh.location(osh.vec2, 0),
+) -> InvariantVertexOutput:
+    return InvariantVertexOutput(osh.vec4(position, 0.0, 1.0))
 
 
 @osh.fragment
@@ -89,6 +101,18 @@ def depth_textured_fragment(
 
 
 @osh.fragment
+def explicit_level_textured_fragment(
+    uv: osh.location(osh.vec2, 0),
+    image: osh.sampled_texture_2d(binding=3),
+    depth_image: osh.sampled_depth_texture_2d(binding=4),
+    filtering: osh.sampler(binding=5),
+) -> osh.location(osh.vec4, 0):
+    color = image.sample_level_with(filtering, uv, 0.0)
+    depth = depth_image.sample_depth_level_with(filtering, uv, 0)
+    return osh.vec4(color.xyz * depth, color.w)
+
+
+@osh.fragment
 def compared_depth_fragment(
     uv: osh.location(osh.vec2, 0),
     image: osh.sampled_depth_texture_2d(binding=3),
@@ -109,6 +133,14 @@ def test_glsl_graphics_stages_and_reflection():
     assert vertex.reflection.outputs[0].builtin == "position"
 
 
+def test_invariant_position_is_emitted_for_glsl_and_wgsl():
+    glsl = osh.compile(invariant_vertex, target="glsl", validate=False)
+    wgsl = osh.compile(invariant_vertex, target="wgsl", validate=False)
+    assert "invariant gl_Position;" in glsl.source
+    assert "@invariant @builtin(position)" in wgsl.source
+    assert glsl.reflection.outputs[0].invariant is True
+
+
 def test_wgsl_graphics_stages_validate_when_naga_is_available():
     validate = shutil.which("naga") is not None
     vertex = osh.compile(triangle_vertex, target="wgsl", validate=validate)
@@ -117,6 +149,18 @@ def test_wgsl_graphics_stages_validate_when_naga_is_available():
     assert "@location(0) position: vec2<f32>" in vertex.source
     assert "-> @builtin(position) vec4<f32>" in vertex.source
     assert "@fragment" in fragment.source
+
+
+def test_separate_textures_support_explicit_level_sampling():
+    glsl = osh.compile(explicit_level_textured_fragment, target="glsl")
+    assert "textureLod(sampler2D(image, filtering), uv, 0.0)" in glsl.source
+    assert "textureLod(sampler2D(depth_image, filtering), uv, 0).r" in glsl.source
+    validate = shutil.which("naga") is not None
+    wgsl = osh.compile(
+        explicit_level_textured_fragment, target="wgsl", validate=validate,
+    )
+    assert "textureSampleLevel(image, filtering, uv, 0.0)" in wgsl.source
+    assert "textureSampleLevel(depth_image, filtering, uv, 0)" in wgsl.source
 
 
 def test_graphics_stages_support_portable_helper_functions():
