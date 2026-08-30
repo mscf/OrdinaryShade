@@ -488,6 +488,12 @@ class _Lowerer:
                 raise ShaderTypeError("shader while condition must be bool")
             return While(self.expression(node.test), self.block(node.body))
         if isinstance(node, ast.Expr):
+            # Python function docstrings are bare string expressions in the
+            # AST.  They are authoring metadata, not executable shader code.
+            if isinstance(node.value, ast.Constant) and isinstance(
+                node.value.value, str,
+            ):
+                return None
             return ExpressionStatement(self.expression(node.value))
         if isinstance(node, ast.Return):
             return Return(
@@ -651,7 +657,7 @@ def lower(shader: ComputeShader, *, helpers=(), externals=()) -> ComputeModule:
     )
 
 
-def lower_graphics(shader: GraphicsShader) -> GraphicsModule:
+def lower_graphics(shader: GraphicsShader, *, helpers=()) -> GraphicsModule:
     if not isinstance(shader, GraphicsShader):
         raise ShaderTypeError("graphics compilation expects @vertex or @fragment")
     function = _source_function(shader)
@@ -726,14 +732,42 @@ def lower_graphics(shader: GraphicsShader) -> GraphicsModule:
         lower_structures[lowered.name] = lowered
         return_type = lowered
         output_structure = lowered
-    lowerer = _Lowerer(value_types, lower_structures)
+    helper_types = {}
+    for helper in helpers:
+        if not isinstance(helper, ShaderFunction):
+            raise ShaderTypeError(
+                "graphics helpers must be decorated with @function"
+            )
+        annotations = inspect.get_annotations(helper.function, eval_str=True)
+        helper_return_type = annotations.get("return")
+        if not isinstance(helper_return_type, (ShaderType, StructType)):
+            raise ShaderTypeError(
+                "shader helper functions require a shader return type"
+            )
+        if helper.__name__ in helper_types:
+            raise ShaderTypeError("shader helper names must be unique")
+        helper_types[helper.__name__] = helper_return_type.name
+        for declared in annotations.values():
+            if isinstance(declared, StructType):
+                lower_structures[declared.name] = declared
+    helper_modules = tuple(
+        lower_function(
+            helper, functions=helper_types, structures=lower_structures,
+        )
+        for helper in helpers
+    )
+    lowerer = _Lowerer(value_types, lower_structures, helper_types)
     statements = lowerer.block(function.body)
     fn = FunctionModule(shader.function.__name__, tuple(parameters), return_type.name, statements)
     resource_structures = tuple(
-        value for name, value in structures.items()
+        value for name, value in lower_structures.items()
         if output_structure is None or name != output_structure.name
     )
-    return GraphicsModule(shader.function.__name__, shader.stage, fn, tuple(inputs), tuple(outputs), output_structure, tuple(resources), resource_structures)
+    return GraphicsModule(
+        shader.function.__name__, shader.stage, fn, tuple(inputs),
+        tuple(outputs), output_structure, tuple(resources),
+        resource_structures, helper_modules,
+    )
 
 
 def lower_function(
@@ -779,7 +813,7 @@ def lower_function(
     if return_type.name != "void" and not contains_return(statements):
         raise ShaderSyntaxError("shader helper function must return a value")
     return FunctionModule(
-        shader.function.__name__, tuple(parameters), return_type.name, statements,
+        shader.__name__, tuple(parameters), return_type.name, statements,
     )
 
 

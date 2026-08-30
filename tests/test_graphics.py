@@ -25,6 +25,22 @@ def triangle_fragment() -> osh.location(osh.vec4, 0):
     return osh.vec4(0.95, 0.45, 0.15, 1.0)
 
 
+@osh.function
+def tint_surface(color: osh.vec3, amount: osh.f32) -> osh.vec3:
+    """Apply a scalar tint while retaining Python-side documentation."""
+    return color * amount
+
+
+@osh.function(name="stable_tint_hook")
+def locally_named_tint(color: osh.vec3) -> osh.vec3:
+    return color * 0.75
+
+
+@osh.fragment
+def helper_fragment(color: osh.location(osh.vec3, 0)) -> osh.location(osh.vec4, 0):
+    return osh.vec4(tint_surface(color, 0.5), 1.0)
+
+
 @osh.vertex
 def varying_vertex(position: osh.location(osh.vec2, 0)) -> VertexOutput:
     return VertexOutput(osh.vec4(position, 0.0, 1.0), osh.vec3(1.0, 0.5, 0.2))
@@ -101,6 +117,19 @@ def test_wgsl_graphics_stages_validate_when_naga_is_available():
     assert "@location(0) position: vec2<f32>" in vertex.source
     assert "-> @builtin(position) vec4<f32>" in vertex.source
     assert "@fragment" in fragment.source
+
+
+def test_graphics_stages_support_portable_helper_functions():
+    for target in ("glsl", "wgsl"):
+        result = osh.compile(
+            helper_fragment, target=target, helpers=(tint_surface,),
+        )
+        assert "tint_surface" in result.source
+        assert "tint_surface(color, 0.5)" in result.source
+
+
+def test_shader_helpers_can_export_a_stable_embedding_symbol():
+    assert locally_named_tint.__name__ == "stable_tint_hook"
 
 
 def test_graphics_spirv_validates_when_glslang_is_available():

@@ -551,6 +551,9 @@ def _emit_graphics(module):
             for field in module.output_structure.fields
         )
         lines.extend(("};", ""))
+    for helper in module.functions:
+        lines.extend(emit_glsl(helper).rstrip().splitlines())
+        lines.append("")
     arguments = []
     for item in module.inputs:
         if item.location is not None:

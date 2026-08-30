@@ -180,3 +180,4 @@ class GraphicsModule:
     output_structure: object | None = None
     resources: tuple[Resource, ...] = ()
     structures: tuple[object, ...] = ()
+    functions: tuple[FunctionModule, ...] = ()

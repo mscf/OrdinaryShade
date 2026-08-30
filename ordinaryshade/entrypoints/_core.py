@@ -24,10 +24,11 @@ class ShaderFunction:
     """A reusable typed shader function without an execution stage."""
 
     function: FunctionType
+    export_name: str | None = None
 
     @property
     def __name__(self):
-        return self.function.__name__
+        return self.export_name or self.function.__name__
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,11 +85,21 @@ vertex = _graphics("vertex")
 fragment = _graphics("fragment")
 
 
-def function(function):
-    """Declare a reusable, typed shader helper function."""
-    if not isinstance(function, FunctionType):
-        raise ShaderTypeError("@function can only decorate a Python function")
-    return ShaderFunction(function)
+def function(function=None, *, name=None):
+    """Declare a reusable typed shader helper function.
+
+    ``name=`` gives an embedding API a stable hook symbol without constraining
+    the Python function's local name.
+    """
+    if name is not None and (
+        not isinstance(name, str) or not name.isidentifier()
+    ):
+        raise ShaderTypeError("shader function name must be an identifier")
+    def decorate(candidate):
+        if not isinstance(candidate, FunctionType):
+            raise ShaderTypeError("@function can only decorate a Python function")
+        return ShaderFunction(candidate, name)
+    return decorate if function is None else decorate(function)
 
 
 def external(function):

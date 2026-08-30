@@ -199,7 +199,7 @@ def compile(
     """Compile a decorated shader to GLSL, WGSL, or Vulkan SPIR-V."""
     try:
         module = (
-            lower_graphics(shader) if isinstance(shader, GraphicsShader)
+            lower_graphics(shader, helpers=helpers) if isinstance(shader, GraphicsShader)
             else lower(shader, helpers=helpers, externals=externals)
         )
     except ShaderError as error:

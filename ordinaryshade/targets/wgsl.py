@@ -556,6 +556,9 @@ def _emit_graphics(module):
             lines.append(f"@group({resource.set}) @binding({resource.binding}) var<storage, {access}> {_identifier(resource.name)}: {resource.type.struct_type.name};")
     if module.resources:
         lines.append("")
+    for helper in module.functions:
+        lines.extend(emit_wgsl(helper).rstrip().splitlines())
+        lines.append("")
     if module.output_structure is not None:
         lines.append(f"struct {module.output_structure.name} {{")
         for field, item in zip(module.output_structure.fields, module.outputs):
