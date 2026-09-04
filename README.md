@@ -7,8 +7,8 @@ intermediate representation into GPU shader targets.
 The first alpha supports Vulkan GLSL/SPIR-V and WebGPU WGSL compute, vertex,
 and fragment shaders. It establishes the
 compiler boundaries, diagnostics, resource reflection, and packaging needed to
-grow toward SPIR-V and additional shader stages without making GLSL the
-project's internal representation.
+add targets and shader stages without making GLSL the internal representation.
+SPIR-V compilation currently uses the GLSL emitter and `glslangValidator`.
 
 ## Package organization
 
@@ -23,6 +23,8 @@ stable, focused import paths for larger integrations.
 Graphics interfaces use portable location and builtin semantics:
 
 ```python
+import ordinaryshade as osh
+
 @osh.vertex
 def vertex_main(position: osh.location(osh.vec2, 0)) -> osh.builtin(osh.vec4, "position"):
     return osh.vec4(position, 0.0, 1.0)
@@ -110,8 +112,18 @@ def process(
 ```
 
 `push_constants(Parameters)` is available for Vulkan GLSL and SPIR-V modules.
-WGSL compilation rejects it explicitly because WebGPU has no push-constant
-resource; portable modules should use `uniform_buffer` instead.
+WGSL compilation rejects it unless an explicit uniform binding is supplied:
+`push_constants(Parameters, wgsl_binding=7, wgsl_set=0)` emits a Vulkan
+push-constant block and a WGSL uniform at group 0, binding 7. The host must bind
+the WGSL uniform explicitly; reflection retains the `push_constants` kind and
+records the supplied binding. Use `uniform_buffer` for a uniform on both targets.
+
+Portable sampled resources include `sampled_texture_2d`,
+`sampled_texture_3d`, and
+`sampled_depth_texture_2d`, paired with `sampler` or `comparison_sampler`.
+For example, a 3-D texture's `sample_level_with(sampler, uvw, lod)` lowers to
+explicit-LOD sampling in GLSL and WGSL. Combined sampled-array resources and
+other Vulkan-only facilities remain subject to target validation.
 
 Storage-buffer elements and fields are writable with ordinary assignment.
 Compute entry points support bare early returns and statically bounded Python
@@ -158,8 +170,10 @@ builtins into a larger backend-owned shader module.
 ## Project relationship
 
 Ordinary Shade is renderer-independent and does not depend on Ordinary Light.
-Ordinary Light may later provide an optional adapter or package extra that
-accepts Ordinary Shade modules at stable renderer extension points.
+Ordinary Light already consumes its generated raster and wavefront shaders,
+reflection, graphics programs, and compute modules. OrdinaryLattice separately
+lowers LatticeModel graphs into Ordinary Shade functions and compute entries.
+Both consumers own their integrations; neither is a dependency of this compiler.
 
 ## Development
 
