@@ -115,8 +115,10 @@ def process(
 WGSL compilation rejects it unless an explicit uniform binding is supplied:
 `push_constants(Parameters, wgsl_binding=7, wgsl_set=0)` emits a Vulkan
 push-constant block and a WGSL uniform at group 0, binding 7. The host must bind
-the WGSL uniform explicitly; reflection retains the `push_constants` kind and
-records the supplied binding. Use `uniform_buffer` for a uniform on both targets.
+the WGSL uniform explicitly. Reflection reports `uniform_buffer` with the
+configured group/binding for WGSL, and `push_constants` with set 0 and binding
+-1 for Vulkan. WGSL fallback bindings are reserved before automatic descriptor
+allocation; explicit collisions are rejected only for WGSL. Use `uniform_buffer` for a uniform on both targets.
 
 Portable sampled resources include `sampled_texture_2d`,
 `sampled_texture_3d`, and

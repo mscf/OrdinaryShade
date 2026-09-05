@@ -468,6 +468,21 @@ def sampled_texture_2d(*, set=0, binding=None):
 
 
 @dataclass(frozen=True, slots=True)
+class SampledTexture3D:
+    """A portable separately bound three-dimensional sampled texture."""
+    set: int = 0
+    binding: int | None = None
+
+    def __post_init__(self):
+        if self.set < 0 or (self.binding is not None and self.binding < 0):
+            raise ShaderTypeError("descriptor set and binding must be non-negative")
+
+
+def sampled_texture_3d(*, set=0, binding=None):
+    return SampledTexture3D(set, binding)
+
+
+@dataclass(frozen=True, slots=True)
 class SampledDepthTexture2D:
     """A portable separately bound two-dimensional depth texture."""
     set: int = 0
@@ -582,10 +597,16 @@ class UniformBuffer:
 @dataclass(frozen=True, slots=True)
 class PushConstants:
     struct_type: StructType
+    wgsl_set: int = 0
+    wgsl_binding: int | None = None
 
     def __post_init__(self):
         if not isinstance(self.struct_type, StructType):
             raise ShaderTypeError("push constants require a shader structure")
+        if self.wgsl_set < 0 or (
+            self.wgsl_binding is not None and self.wgsl_binding < 0
+        ):
+            raise ShaderTypeError("WGSL descriptor set and binding must be non-negative")
 
 
 def storage_buffer(element_type, *, access="read_write", set=0, binding=None):
@@ -600,8 +621,14 @@ def uniform_buffer(struct_type, *, set=0, binding=None):
     return UniformBuffer(struct_type, set, binding)
 
 
-def push_constants(struct_type):
-    return PushConstants(struct_type)
+def push_constants(struct_type, *, wgsl_set=0, wgsl_binding=None):
+    """Declare Vulkan push constants with an optional WGSL uniform binding.
+
+    WGSL has no push-constant address space.  Supplying ``wgsl_binding``
+    gives the portable lowering an explicit uniform-buffer binding while the
+    GLSL target continues to emit a native push-constant block.
+    """
+    return PushConstants(struct_type, wgsl_set, wgsl_binding)
 
 
 class _Builtin:

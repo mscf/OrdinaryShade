@@ -280,6 +280,24 @@ class CompilerTests(unittest.TestCase):
         with self.assertRaisesRegex(osh.ShaderTypeError, "no push-constant"):
             osh.compile(pushed, target="wgsl")
 
+    def test_push_constants_can_use_a_wgsl_uniform_fallback(self):
+        @osh.compute()
+        def pushed(
+            params: osh.push_constants(ScaleParameters, wgsl_binding=7),
+            target: osh.storage_image("rgba16f", access="write"),
+        ):
+            target.store(osh.ivec2(0), osh.vec4(params.scale))
+
+        glsl = osh.compile(pushed)
+        self.assertIn("layout(push_constant) uniform params_Block", glsl.source)
+        self.assertEqual(glsl.reflection.resources[0].kind, "push_constants")
+
+        wgsl = osh.compile(pushed, target="wgsl", validate=NAGA_AVAILABLE)
+        self.assertIn("@group(0) @binding(7)", wgsl.source)
+        self.assertIn("var<uniform> params: ScaleParameters;", wgsl.source)
+        self.assertEqual(wgsl.reflection.resources[0].kind, "uniform_buffer")
+        self.assertEqual(wgsl.reflection.resources[0].binding, 7)
+
     def test_explicit_scalar_casts_are_target_native(self):
         @osh.function
         def cast_value(value: osh.u32) -> osh.f32:
@@ -972,6 +990,22 @@ class CompilerTests(unittest.TestCase):
         self.assertEqual(result.reflection.resources[0].kind, "sampled_texture_3d_array")
         with self.assertRaisesRegex(osh.ShaderTypeError, "combined-sampler"):
             osh.compile(sample_volume, target="wgsl")
+
+    def test_portable_sampled_texture_3d(self):
+        @osh.fragment
+        def sample_volume(
+            uvw: osh.location(osh.vec3, 0),
+            volume: osh.sampled_texture_3d(binding=0),
+            linear_sampler: osh.sampler(binding=1),
+        ) -> osh.location(osh.vec4, 0):
+            return volume.sample_level_with(linear_sampler, uvw, 0.0)
+
+        glsl = osh.compile(sample_volume).source
+        self.assertIn("uniform texture3D volume", glsl)
+        self.assertIn("textureLod(sampler3D(volume, linear_sampler), uvw, 0.0)", glsl)
+        wgsl = osh.compile(sample_volume, target="wgsl").source
+        self.assertIn("var volume: texture_3d<f32>", wgsl)
+        self.assertIn("textureSampleLevel(volume, linear_sampler, uvw, 0.0)", wgsl)
 
     def test_vulkan_sampled_texture_2d_array(self):
         @osh.compute()

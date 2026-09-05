@@ -9,7 +9,7 @@ from ..ir import (
     Return, Subscript, Unary, While, GraphicsModule,
 )
 from ..types import (
-    AccelerationStructure, ComparisonSampler, FixedArrayType, PushConstants, RuntimeArrayType, SampledDepthTexture2D, SampledTexture2D, SampledTexture2DArray, SampledTexture3DArray, Sampler, StorageBuffer, StorageImage, StorageImageArray, StorageRecord, StructType,
+    AccelerationStructure, ComparisonSampler, FixedArrayType, PushConstants, RuntimeArrayType, SampledDepthTexture2D, SampledTexture2D, SampledTexture2DArray, SampledTexture3D, SampledTexture3DArray, Sampler, StorageBuffer, StorageImage, StorageImageArray, StorageRecord, StructType,
     UniformBuffer,
 )
 
@@ -185,6 +185,12 @@ def _expression(value):
             if value.function.attribute == "sample_level_with" and len(value.arguments) == 3:
                 sample, coordinate, level = map(_expression, value.arguments)
                 return f"textureLod(sampler2D({owner}, {sample}), {coordinate}, {level})"
+            if value.function.attribute == "sample_3d_with" and len(value.arguments) == 2:
+                sample, coordinate = map(_expression, value.arguments)
+                return f"texture(sampler3D({owner}, {sample}), {coordinate})"
+            if value.function.attribute == "sample_3d_level_with" and len(value.arguments) == 3:
+                sample, coordinate, level = map(_expression, value.arguments)
+                return f"textureLod(sampler3D({owner}, {sample}), {coordinate}, {level})"
             if value.function.attribute == "sample_depth_with" and len(value.arguments) == 2:
                 sample, coordinate = map(_expression, value.arguments)
                 return f"texture(sampler2D({owner}, {sample}), {coordinate}).r"
@@ -409,6 +415,11 @@ def emit_glsl(module, declaration=False):
                 f"layout(set = {resource.set}, binding = {resource.binding}) "
                 f"uniform texture2D {_identifier(resource.name)};"
             )
+        elif isinstance(resource.type, SampledTexture3D):
+            lines.append(
+                f"layout(set = {resource.set}, binding = {resource.binding}) "
+                f"uniform texture3D {_identifier(resource.name)};"
+            )
         elif isinstance(resource.type, (ComparisonSampler, Sampler)):
             lines.append(
                 f"layout(set = {resource.set}, binding = {resource.binding}) "
@@ -547,6 +558,11 @@ def _emit_graphics(module):
             lines.append(
                 f"layout(set = {resource.set}, binding = {resource.binding}) "
                 f"uniform texture2D {_identifier(resource.name)};"
+            )
+        elif isinstance(resource.type, SampledTexture3D):
+            lines.append(
+                f"layout(set = {resource.set}, binding = {resource.binding}) "
+                f"uniform texture3D {_identifier(resource.name)};"
             )
         elif isinstance(resource.type, (ComparisonSampler, Sampler)):
             lines.append(

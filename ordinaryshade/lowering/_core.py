@@ -15,7 +15,7 @@ from ..ir import (
     FunctionModule, GraphicsModule, StageInterface,
 )
 from ..types import (
-    AccelerationStructure, ComparisonSampler, FixedArrayType, PushConstants, RuntimeArrayType, ShaderType, StorageBuffer, StorageImage, StorageImageArray, SampledDepthTexture2D, SampledTexture2D, SampledTexture2DArray, SampledTexture3DArray, Sampler, StorageRecord, StructType,
+    AccelerationStructure, ComparisonSampler, FixedArrayType, PushConstants, RuntimeArrayType, ShaderType, StorageBuffer, StorageImage, StorageImageArray, SampledDepthTexture2D, SampledTexture2D, SampledTexture2DArray, SampledTexture3D, SampledTexture3DArray, Sampler, StorageRecord, StructType,
     UniformBuffer, QualifiedType, StageIOType,
 )
 
@@ -331,6 +331,11 @@ class _Lowerer:
                         "sampled 2D texture sample_level_with() requires sampler, coordinate, and level"
                     )
                 return "vec4"
+            if owner_type == "sampled_texture_3d" and node.func.attr in {"sample_with", "sample_level_with"}:
+                expected = 2 if node.func.attr == "sample_with" else 3
+                if len(node.args) != expected:
+                    raise ShaderTypeError("sampled 3D texture sampling has invalid arguments")
+                return "vec4"
             if owner_type == "sampled_depth_texture_2d" and node.func.attr == "sample_depth_with":
                 if len(node.args) != 2:
                     raise ShaderTypeError(
@@ -421,8 +426,20 @@ class _Lowerer:
                 and len(node.args) == 3
                 and "vec" in self.expression_type(node.args[0])
             )
+            function = self.expression(node.func)
+            if (
+                isinstance(node.func, ast.Attribute)
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id in self.value_types
+                and self.expression_type(node.func.value) == "sampled_texture_3d"
+                and node.func.attr in {"sample_with", "sample_level_with"}
+            ):
+                function = Attribute(
+                    self.expression(node.func.value),
+                    "sample_3d_with" if node.func.attr == "sample_with" else "sample_3d_level_with",
+                )
             return Call(
-                self.expression(node.func),
+                function,
                 tuple(self.expression(argument) for argument in node.args),
                 selector_vector,
             )
@@ -570,7 +587,7 @@ def _source_function(shader):
     return function
 
 
-def lower(shader: ComputeShader, *, helpers=(), externals=()) -> ComputeModule:
+def lower(shader: ComputeShader, *, helpers=(), externals=(), target="glsl") -> ComputeModule:
     if not isinstance(shader, ComputeShader):
         raise ShaderTypeError("compile() expects a function decorated with @compute")
     function = _source_function(shader)
@@ -579,11 +596,21 @@ def lower(shader: ComputeShader, *, helpers=(), externals=()) -> ComputeModule:
     next_binding = 0
     annotations = inspect.get_annotations(shader.function, eval_str=True)
     structures = {}
+    # WGSL fallback uniforms occupy descriptors; Vulkan push constants do not.
+    # Reserve them before automatic allocation, regardless of parameter order.
+    if target == "wgsl":
+        for argument in function.args.args:
+            declaration = annotations.get(argument.arg)
+            if isinstance(declaration, PushConstants) and declaration.wgsl_binding is not None:
+                key = (declaration.wgsl_set, declaration.wgsl_binding)
+                if key in used_bindings:
+                    raise ShaderTypeError(f"duplicate descriptor set/binding {key}")
+                used_bindings.add(key)
     for argument in function.args.args:
         declaration = annotations.get(argument.arg)
         if not isinstance(
             declaration,
-            (AccelerationStructure, StorageImage, SampledDepthTexture2D, SampledTexture2D, SampledTexture2DArray, SampledTexture3DArray, ComparisonSampler, Sampler, StorageBuffer, StorageRecord, UniformBuffer, PushConstants),
+            (AccelerationStructure, StorageImage, SampledDepthTexture2D, SampledTexture2D, SampledTexture3D, SampledTexture2DArray, SampledTexture3DArray, ComparisonSampler, Sampler, StorageBuffer, StorageRecord, UniformBuffer, PushConstants),
         ):
             raise ShaderTypeError(
                 f"parameter {argument.arg!r} must have an Ordinary Shade resource annotation"
@@ -639,6 +666,8 @@ def lower(shader: ComputeShader, *, helpers=(), externals=()) -> ComputeModule:
             resource_types[resource.name] = "sampled_depth_texture_2d"
         elif isinstance(resource.type, SampledTexture2D):
             resource_types[resource.name] = "sampled_texture_2d"
+        elif isinstance(resource.type, SampledTexture3D):
+            resource_types[resource.name] = "sampled_texture_3d"
         elif isinstance(resource.type, Sampler):
             resource_types[resource.name] = "sampler"
         elif isinstance(resource.type, ComparisonSampler):
@@ -711,7 +740,7 @@ def lower_graphics(shader: GraphicsShader, *, helpers=()) -> GraphicsModule:
             inputs.append(StageInterface(argument.arg, declared.type.name, declared.location, declared.builtin, declared.invariant))
             value_types[argument.arg] = declared.type.name
             continue
-        if not isinstance(declared, (UniformBuffer, StorageBuffer, StorageRecord, SampledDepthTexture2D, SampledTexture2D, ComparisonSampler, Sampler)):
+        if not isinstance(declared, (UniformBuffer, StorageBuffer, StorageRecord, SampledDepthTexture2D, SampledTexture2D, SampledTexture3D, ComparisonSampler, Sampler)):
             raise ShaderTypeError(
                 f"graphics parameter {argument.arg!r} requires stage IO or a portable buffer resource"
             )
@@ -729,6 +758,8 @@ def lower_graphics(shader: GraphicsShader, *, helpers=()) -> GraphicsModule:
             value_types[argument.arg] = "sampled_depth_texture_2d"
         elif isinstance(declared, SampledTexture2D):
             value_types[argument.arg] = "sampled_texture_2d"
+        elif isinstance(declared, SampledTexture3D):
+            value_types[argument.arg] = "sampled_texture_3d"
         elif isinstance(declared, Sampler):
             value_types[argument.arg] = "sampler"
         elif isinstance(declared, ComparisonSampler):

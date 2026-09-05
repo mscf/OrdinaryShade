@@ -16,7 +16,7 @@ from ..errors import CompilerUnavailableError, ShaderCompilationError, ShaderErr
 from ..lowering import lower, lower_external, lower_function, lower_graphics
 from ..reflection import GraphicsPipelineReflection, ResourceReflection, ShaderReflection, StageIOReflection
 from ..validation import validate_wgsl
-from ..types import AccelerationStructure, ComparisonSampler, PushConstants, RuntimeArrayType, SampledDepthTexture2D, SampledTexture2D, SampledTexture2DArray, SampledTexture3DArray, Sampler, ShaderType, StorageBuffer, StorageImage, StorageRecord, StructType, UniformBuffer
+from ..types import AccelerationStructure, ComparisonSampler, PushConstants, RuntimeArrayType, SampledDepthTexture2D, SampledTexture2D, SampledTexture2DArray, SampledTexture3D, SampledTexture3DArray, Sampler, ShaderType, StorageBuffer, StorageImage, StorageRecord, StructType, UniformBuffer
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,7 +79,7 @@ def link_graphics(vertex_shader, fragment_shader):
     )
 
 
-def _reflection(module):
+def _reflection(module, *, target="glsl"):
     def reflected(resource):
         if isinstance(resource.type, AccelerationStructure):
             return ResourceReflection(
@@ -111,6 +111,11 @@ def _reflection(module):
                 resource.name, "sampled_texture_2d", "rgba",
                 "read", resource.set, resource.binding,
             )
+        if isinstance(resource.type, SampledTexture3D):
+            return ResourceReflection(
+                resource.name, "sampled_texture_3d", "rgba",
+                "read", resource.set, resource.binding,
+            )
         if isinstance(resource.type, Sampler):
             return ResourceReflection(
                 resource.name, "sampler", "sampler",
@@ -137,6 +142,11 @@ def _reflection(module):
                 "read", resource.set, resource.binding,
             )
         if isinstance(resource.type, PushConstants):
+            if target == "wgsl" and resource.type.wgsl_binding is not None:
+                return ResourceReflection(
+                    resource.name, "uniform_buffer", resource.type.struct_type.name,
+                    "read", resource.type.wgsl_set, resource.type.wgsl_binding,
+                )
             return ResourceReflection(
                 resource.name, "push_constants", resource.type.struct_type.name,
                 "read", 0, -1,
@@ -201,13 +211,13 @@ def compile(
     try:
         module = (
             lower_graphics(shader, helpers=helpers) if isinstance(shader, GraphicsShader)
-            else lower(shader, helpers=helpers, externals=externals)
+            else lower(shader, helpers=helpers, externals=externals, target=target)
         )
     except ShaderError as error:
         raise annotate_error(error, shader) from error.__cause__
     reflection = (
         _graphics_reflection(module)
-        if isinstance(shader, GraphicsShader) else _reflection(module)
+        if isinstance(shader, GraphicsShader) else _reflection(module, target=target)
     )
     if target == "glsl":
         source = emit_glsl(module)

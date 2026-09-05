@@ -9,7 +9,7 @@ from ..ir import (
     Return, Subscript, Unary, While, GraphicsModule,
 )
 from ..types import (
-    AccelerationStructure, ComparisonSampler, FixedArrayType, PushConstants, RuntimeArrayType, SampledDepthTexture2D, SampledTexture2D, SampledTexture2DArray, SampledTexture3DArray, Sampler, StorageBuffer, StorageImage, StorageImageArray, StorageRecord, StructType,
+    AccelerationStructure, ComparisonSampler, FixedArrayType, PushConstants, RuntimeArrayType, SampledDepthTexture2D, SampledTexture2D, SampledTexture2DArray, SampledTexture3D, SampledTexture3DArray, Sampler, StorageBuffer, StorageImage, StorageImageArray, StorageRecord, StructType,
     UniformBuffer,
 )
 
@@ -253,6 +253,12 @@ def _expression(value):
             if value.function.attribute == "sample_level_with" and len(value.arguments) == 3:
                 sample, coordinate, level = map(_expression, value.arguments)
                 return f"textureSampleLevel({owner}, {sample}, {coordinate}, {level})"
+            if value.function.attribute == "sample_3d_with" and len(value.arguments) == 2:
+                sample, coordinate = map(_expression, value.arguments)
+                return f"textureSample({owner}, {sample}, {coordinate})"
+            if value.function.attribute == "sample_3d_level_with" and len(value.arguments) == 3:
+                sample, coordinate, level = map(_expression, value.arguments)
+                return f"textureSampleLevel({owner}, {sample}, {coordinate}, {level})"
             if value.function.attribute == "sample_depth_with" and len(value.arguments) == 2:
                 sample, coordinate = map(_expression, value.arguments)
                 return f"textureSample({owner}, {sample}, {coordinate})"
@@ -442,9 +448,11 @@ def emit_wgsl(module):
         if isinstance(resource.type, AccelerationStructure):
             raise ShaderTypeError("WGSL does not support acceleration structures or ray queries")
         if isinstance(resource.type, PushConstants):
-            raise ShaderTypeError(
-                "WGSL has no push-constant resource; use a uniform buffer"
-            )
+            if resource.type.wgsl_binding is None:
+                raise ShaderTypeError(
+                    "WGSL has no push-constant resource; provide "
+                    "wgsl_binding=... to lower it as a uniform buffer"
+                )
         struct_type = getattr(
             resource.type, "element_type", getattr(resource.type, "struct_type", None)
         )
@@ -473,6 +481,11 @@ def emit_wgsl(module):
             lines.append(
                 f"@group({resource.set}) @binding({resource.binding}) "
                 f"var {_identifier(resource.name)}: texture_2d<f32>;"
+            )
+        elif isinstance(resource.type, SampledTexture3D):
+            lines.append(
+                f"@group({resource.set}) @binding({resource.binding}) "
+                f"var {_identifier(resource.name)}: texture_3d<f32>;"
             )
         elif isinstance(resource.type, ComparisonSampler):
             lines.append(
@@ -523,6 +536,13 @@ def emit_wgsl(module):
         elif isinstance(resource.type, UniformBuffer):
             lines.append(
                 f"@group({resource.set}) @binding({resource.binding}) "
+                f"var<uniform> {_identifier(resource.name)}: "
+                f"{resource.type.struct_type.name};"
+            )
+        elif isinstance(resource.type, PushConstants):
+            lines.append(
+                f"@group({resource.type.wgsl_set}) "
+                f"@binding({resource.type.wgsl_binding}) "
                 f"var<uniform> {_identifier(resource.name)}: "
                 f"{resource.type.struct_type.name};"
             )
@@ -585,6 +605,11 @@ def _emit_graphics(module):
             lines.append(
                 f"@group({resource.set}) @binding({resource.binding}) "
                 f"var {_identifier(resource.name)}: texture_2d<f32>;"
+            )
+        elif isinstance(resource.type, SampledTexture3D):
+            lines.append(
+                f"@group({resource.set}) @binding({resource.binding}) "
+                f"var {_identifier(resource.name)}: texture_3d<f32>;"
             )
         elif isinstance(resource.type, ComparisonSampler):
             lines.append(
