@@ -23,7 +23,7 @@ classifiers = [
 dependencies = []
 
 [project.optional-dependencies]
-dev = ["build>=1.2", "twine>=5.1"]
+dev = ["pytest>=8", "build>=1.2", "twine>=5.1"]
 
 [tool.setuptools.packages.find]
 include = ["ordinaryshade*"]

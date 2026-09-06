@@ -7,6 +7,8 @@ wheel = Path(sys.argv[1])
 with zipfile.ZipFile(wheel) as archive:
     names = set(archive.namelist())
 required = {
+    "ordinaryshade/portable/__init__.py",
+    "ordinaryshade/portable/shader_export.py",
     "ordinaryshade/__init__.py",
     "ordinaryshade/compiler/__init__.py",
     "ordinaryshade/compiler/compiler.py",
@@ -19,6 +21,7 @@ missing = required - names
 if missing:
     raise SystemExit(f"wheel is missing: {sorted(missing)}")
 forbidden = {
+    "ordinaryshade/portable.py",
     "ordinaryshade/compiler.py",
     "ordinaryshade/diagnostics.py",
     "ordinaryshade/entrypoints.py",
