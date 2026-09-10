@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.0a5
+
+- Support typed compile-time shader variants, output parameters, runtime-array lengths, and 3D storage images.
+- Add math, packing, and Vulkan atomic intrinsics required by OrdinaryLight transport.
+- Fix vector bitcasts, loop-local type scoping, graphics helper resource access, and resource-free helper structure registration.
+- Extend external resource contexts and Vulkan image formats; reject unsupported WGSL operations explicitly.
+- Validate the complete OrdinaryLight shader migration with 106 compiler tests.
+
 ## 0.1.0a0
 
 - Establish the independent `ordinaryshade` package and compiler architecture.

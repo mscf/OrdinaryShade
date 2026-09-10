@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from ..errors import ShaderTypeError
 from ..ir import (
-    Assign, Attribute, Binary, Break, Call, Compare, Conditional, Continue,
+    Assign, Attribute, Binary, Bitcast, Break, Call, Compare, Conditional, Continue,
     ExpressionStatement, ForRange, FunctionModule, If, Let, Literal, Name,
-    Return, Subscript, Unary, While, GraphicsModule,
+    Return, Subscript, Unary, While, GraphicsModule, Specialization,
 )
 from ..types import (
     AccelerationStructure, ComparisonSampler, FixedArrayType, PushConstants, RuntimeArrayType, SampledDepthTexture2D, SampledTexture2D, SampledTexture2DArray, SampledTexture3D, SampledTexture3DArray, Sampler, StorageBuffer, StorageImage, StorageImageArray, StorageRecord, StructType,
@@ -83,10 +83,10 @@ def _expression(value):
             and value.attribute in {
                 "mix", "minimum", "maximum", "select", "clamp", "dot",
                 "normalize", "power", "round", "absolute", "sign", "sqrt", "logarithm", "ceiling",
-                "exp", "length", "cross", "refract", "cosine", "sine", "arctangent2", "arccosine", "fraction", "vec2", "vec3", "vec4", "bvec2",
-                "any_value", "subgroup_ballot", "subgroup_ballot_bit_count",
+                "exp", "length", "cross", "smoothstep", "modulo", "unpack_unorm4x8", "is_nan", "is_inf", "reflect", "refract", "cosine", "sine", "arctangent2", "arccosine", "fraction", "vec2", "vec3", "vec4", "bvec2",
+                "all_value", "any_value", "subgroup_ballot", "subgroup_ballot_bit_count",
                 "subgroup_ballot_exclusive_bit_count", "subgroup_elect",
-                "subgroup_broadcast_first", "atomic_add",
+                "subgroup_broadcast_first", "atomic_add", "atomic_or",
                 "bvec3", "bvec4", "ivec2", "ivec3", "ivec4", "uvec2",
                 "uvec3", "uvec4", "mat3", "mat4",
                 "f32", "i32", "u32", "boolean", "pack_unorm4x8",
@@ -103,14 +103,14 @@ def _expression(value):
                 "float_bits_to_uint": "floatBitsToUint",
                 "uint_bits_to_float": "uintBitsToFloat",
                 "bitfield_reverse": "bitfieldReverse",
-                "cosine": "cos", "sine": "sin", "arctangent2": "atan",
+                "modulo": "mod", "unpack_unorm4x8": "unpackUnorm4x8", "is_nan": "isnan", "is_inf": "isinf", "cosine": "cos", "sine": "sin", "arctangent2": "atan",
                 "arccosine": "acos", "fraction": "fract",
-                "any_value": "any", "subgroup_ballot": "subgroupBallot",
+                "all_value": "all", "any_value": "any", "subgroup_ballot": "subgroupBallot",
                 "subgroup_ballot_bit_count": "subgroupBallotBitCount",
                 "subgroup_ballot_exclusive_bit_count": "subgroupBallotExclusiveBitCount",
                 "subgroup_elect": "subgroupElect",
                 "subgroup_broadcast_first": "subgroupBroadcastFirst",
-                "atomic_add": "atomicAdd",
+                "atomic_add": "atomicAdd", "atomic_or": "atomicOr",
                 "pack_half2x16": "packHalf2x16",
                 "unpack_half2x16": "unpackHalf2x16",
                 "pack_unorm2x16": "packUnorm2x16",
@@ -123,6 +123,9 @@ def _expression(value):
                 value.attribute, value.attribute,
             )
         return f"{_expression(value.value)}.{_identifier(value.attribute)}"
+    if isinstance(value, Bitcast):
+        function = "floatBitsToUint" if value.type_name == "uint" or value.type_name.startswith("uvec") else "uintBitsToFloat"
+        return f"{function}({_expression(value.value)})"
     if isinstance(value, Subscript):
         return f"{_expression(value.value)}[{_expression(value.index)}]"
     if isinstance(value, Binary):
@@ -148,6 +151,10 @@ def _expression(value):
             return f"{function}({left}, {right})"
         return f"({left} {value.operator} {right})"
     if isinstance(value, Call):
+        if (isinstance(value.function, Attribute) and isinstance(value.function.value, Name)
+                and value.function.value.value in {"osh", "ordinaryshade"}
+                and value.function.attribute == "array_length"):
+            return f"uint({_expression(value.arguments[0])}.length())"
         if (
             isinstance(value.function, Attribute)
             and isinstance(value.function.value, Name)
@@ -164,6 +171,8 @@ def _expression(value):
             owner = _expression(value.function.value)
             ray_methods = {
                 "initialize": "rayQueryInitializeEXT",
+                "terminate": "rayQueryTerminateEXT",
+                "generate_intersection": "rayQueryGenerateIntersectionEXT",
                 "proceed": "rayQueryProceedEXT",
                 "intersection_type": "rayQueryGetIntersectionTypeEXT",
                 "intersection_t": "rayQueryGetIntersectionTEXT",
@@ -211,7 +220,7 @@ def _expression(value):
                 return f"textureQueryLevels({owner}[nonuniformEXT({index})])"
             if value.function.attribute == "store":
                 return f"imageStore({owner}, {arguments})"
-            if value.function.attribute == "size":
+            if value.function.attribute in {"size", "size3d"}:
                 return f"imageSize({owner})"
         return f"{_expression(value.function)}({arguments})"
     raise ShaderTypeError(f"GLSL backend cannot emit {type(value).__name__}")
@@ -219,6 +228,15 @@ def _expression(value):
 
 def _statement(value, indent=1):
     prefix = "    " * indent
+    if isinstance(value, Specialization):
+        lines = [f"#if {value.condition}"]
+        for item in value.body:
+            lines.extend(_statement(item, indent))
+        if value.else_body:
+            lines.append("#else")
+            for item in value.else_body:
+                lines.extend(_statement(item, indent))
+        return lines + ["#endif"]
     if isinstance(value, Let):
         if value.type_name.startswith("shared:"):
             return []
@@ -442,11 +460,11 @@ def emit_glsl(module, declaration=False):
             access = {
                 "read": "readonly ", "write": "writeonly ", "read_write": "",
             }[resource.type.access]
-            image_type = "image2D"
+            image_type = f"image{resource.type.dimensions}D"
             if resource.type.format.endswith("ui"):
-                image_type = "uimage2D"
+                image_type = f"uimage{resource.type.dimensions}D"
             elif resource.type.format.endswith("i"):
-                image_type = "iimage2D"
+                image_type = f"iimage{resource.type.dimensions}D"
             layout = (
                 f", {resource.type.format}"
                 if resource.type.format != "unformatted" else ""

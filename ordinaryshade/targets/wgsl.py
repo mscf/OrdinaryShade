@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from ..errors import ShaderTypeError
 from ..ir import (
-    Assign, Attribute, Binary, Break, Call, Compare, Conditional, Continue,
+    Assign, Attribute, Binary, Bitcast, Break, Call, Compare, Conditional, Continue,
     ExpressionStatement, ForRange, FunctionModule, If, Let, Literal, Name,
     Return, Subscript, Unary, While, GraphicsModule,
 )
@@ -67,18 +67,21 @@ _INTRINSICS = {
     "ceiling": "ceil",
     "length": "length",
     "cross": "cross",
+    "smoothstep": "smoothstep",
+    "unpack_unorm4x8": "unpack4x8unorm",
     "refract": "refract",
+    "reflect": "reflect",
     "cosine": "cos",
     "sine": "sin",
     "arctangent2": "atan2",
     "arccosine": "acos",
     "fraction": "fract",
-    "any_value": "any", "subgroup_ballot": "subgroupBallot",
+    "all_value": "all", "any_value": "any", "subgroup_ballot": "subgroupBallot",
     "subgroup_ballot_bit_count": "subgroupBallotBitCount",
     "subgroup_ballot_exclusive_bit_count": "subgroupBallotExclusiveBitCount",
     "subgroup_elect": "subgroupElect",
     "subgroup_broadcast_first": "subgroupBroadcastFirst",
-    "atomic_add": "atomicAdd",
+    "atomic_add": "atomicAdd", "atomic_or": "atomicOr",
     "pack_half2x16": "pack2x16float",
     "unpack_half2x16": "unpack2x16float",
     "pack_unorm2x16": "pack2x16unorm",
@@ -214,6 +217,8 @@ def _expression(value):
         if _is_ordinaryshade_attribute(value) and value.attribute in _INTRINSICS:
             return _INTRINSICS[value.attribute]
         return f"{_expression(value.value)}.{value.attribute}"
+    if isinstance(value, Bitcast):
+        return f"bitcast<{_TYPES[value.type_name]}>({_expression(value.value)})"
     if isinstance(value, Subscript):
         return f"{_expression(value.value)}[{_expression(value.index)}]"
     if isinstance(value, Binary):
@@ -235,6 +240,12 @@ def _expression(value):
             f"{_expression(value.right)})"
         )
     if isinstance(value, Call):
+        if (_is_ordinaryshade_attribute(value.function) and value.function.attribute in {"is_nan", "is_inf", "modulo", "atomic_or"}):
+            raise ShaderTypeError(f"WGSL backend does not support {value.function.attribute}")
+        if (isinstance(value.function, Attribute) and isinstance(value.function.value, Name)
+                and value.function.value.value in {"osh", "ordinaryshade"}
+                and value.function.attribute == "array_length"):
+            return f"arrayLength(&{_expression(value.arguments[0])})"
         if (
             _is_ordinaryshade_attribute(value.function)
             and value.function.attribute == "select"
@@ -272,6 +283,8 @@ def _expression(value):
                 return f"textureLoad({owner}, {arguments})"
             if value.function.attribute == "store":
                 return f"textureStore({owner}, {arguments})"
+            if value.function.attribute == "size3d":
+                return f"vec3<i32>(textureDimensions({owner}))"
             if value.function.attribute == "size":
                 return f"vec2<i32>(textureDimensions({owner}))"
         return f"{_expression(value.function)}({arguments})"
@@ -506,7 +519,7 @@ def emit_wgsl(module):
                 ) from error
             lines.append(
                 f"@group({resource.set}) @binding({resource.binding}) "
-                f"var {_identifier(resource.name)}: texture_storage_2d<"
+                f"var {_identifier(resource.name)}: texture_storage_{resource.type.dimensions}d<"
                 f"{format_name}, {resource.type.access}>;"
             )
         elif isinstance(resource.type, StorageBuffer):

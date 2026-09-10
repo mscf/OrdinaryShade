@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 import ast
+import re
 import inspect
 import textwrap
 
 from ..entrypoints import ComputeShader, ExternalFunction, GraphicsShader, ShaderFunction
 from ..errors import ShaderSyntaxError, ShaderTypeError
 from ..ir import (
-    Assign, Attribute, Binary, Break, Call, Compare, ComputeModule, Conditional, Continue,
+    Assign, Attribute, Binary, Bitcast, Break, Call, Compare, ComputeModule, Conditional, Continue,
     ExpressionStatement, ForRange, If, Let, Literal, Name, Parameter, Resource,
-    Return, Subscript, Unary, While,
+    Return, Subscript, Unary, While, Specialization,
     FunctionModule, GraphicsModule, StageInterface,
 )
 from ..types import (
@@ -120,6 +121,10 @@ class _Lowerer:
                 )
         if isinstance(node, ast.Subscript):
             owner_type = self.expression_type(node.value)
+            if owner_type in {"vec2", "vec3", "vec4", "ivec2", "ivec3", "ivec4", "uvec2", "uvec3", "uvec4", "bvec2", "bvec3", "bvec4"}:
+                return "float" if owner_type.startswith("vec") else {"i": "int", "u": "uint", "b": "bool"}[owner_type[0]]
+            if owner_type in {"mat3", "mat4"}:
+                return "vec" + owner_type[-1]
             if owner_type.startswith("storage_image_array:"):
                 return "storage_image:" + owner_type.split(":", 1)[1]
             if owner_type.startswith("storage_buffer:"):
@@ -192,6 +197,23 @@ class _Lowerer:
                     raise ShaderTypeError(
                         "reorder_thread requires capabilities=('shader_reorder',)"
                     )
+                if intrinsic == "unpack_unorm4x8":
+                    return "vec4"
+                if intrinsic == "modulo":
+                    return self.expression_type(node.args[0])
+                if intrinsic in {"is_nan", "is_inf"}:
+                    if len(node.args) != 1:
+                        raise ShaderTypeError("floating-point classification takes one argument")
+                    operand = self.expression_type(node.args[0])
+                    if operand == "float":
+                        return "bool"
+                    if operand in {"vec2", "vec3", "vec4"}:
+                        return "b" + operand
+                    raise ShaderTypeError("floating-point classification requires floats")
+                if intrinsic == "array_length":
+                    if len(node.args) != 1 or not self.expression_type(node.args[0]).startswith(("storage_buffer:", "runtime_array:")):
+                        raise ShaderTypeError("array_length requires a runtime array")
+                    return "uint"
                 constructors = {
                     "f32": "float", "i32": "int", "u32": "uint",
                     "boolean": "bool", "vec2": "vec2", "vec3": "vec3",
@@ -248,7 +270,7 @@ class _Lowerer:
                     return "float"
                 if intrinsic == "cross":
                     return self.expression_type(node.args[0])
-                if intrinsic == "any_value" or intrinsic == "subgroup_elect":
+                if intrinsic in {"any_value", "all_value"} or intrinsic == "subgroup_elect":
                     return "bool"
                 if intrinsic == "subgroup_ballot":
                     return "uvec4"
@@ -263,10 +285,18 @@ class _Lowerer:
                     return "void"
                 if intrinsic == "pack_unorm4x8":
                     return "uint"
-                if intrinsic == "float_bits_to_uint":
-                    return "uint"
-                if intrinsic == "uint_bits_to_float":
-                    return "float"
+                if intrinsic in {"float_bits_to_uint", "uint_bits_to_float"}:
+                    if len(node.args) != 1:
+                        raise ShaderTypeError("bitcasts require one argument")
+                    source_type = self.expression_type(node.args[0])
+                    forward = intrinsic == "float_bits_to_uint"
+                    scalar, vector = ("float", "vec") if forward else ("uint", "uvec")
+                    target, target_vector = ("uint", "uvec") if forward else ("float", "vec")
+                    if source_type == scalar:
+                        return target
+                    if source_type in {vector + str(width) for width in (2, 3, 4)}:
+                        return target_vector + source_type[-1]
+                    raise ShaderTypeError("bitcast input has an incompatible scalar or vector type")
                 if intrinsic == "bitfield_reverse":
                     return self.expression_type(node.args[0])
                 if intrinsic in {"pack_half2x16", "pack_unorm2x16"}:
@@ -278,22 +308,22 @@ class _Lowerer:
                 if intrinsic in {
                     "mix", "minimum", "maximum", "clamp", "normalize", "power",
                     "round", "absolute", "sign", "sqrt", "exp", "exp2", "logarithm", "ceiling",
-                    "floor", "log2", "cosine", "sine", "refract",
+                    "smoothstep", "floor", "log2", "cosine", "sine", "reflect", "refract",
                     "arctangent2", "arccosine", "fraction",
                 }:
                     return self.expression_type(node.args[0])
             owner_type = self.expression_type(node.func.value)
-            if owner_type.startswith("storage_image:") and node.func.attr == "load":
+            if owner_type.startswith(("storage_image:", "storage_image_3d:")) and node.func.attr == "load":
                 format_name = owner_type.split(":", 1)[1]
                 if format_name.endswith("ui"):
                     return "uvec4"
                 if format_name.endswith("i"):
                     return "ivec4"
                 return "vec4"
-            if owner_type.startswith("storage_image:") and node.func.attr == "size":
+            if owner_type.startswith(("storage_image:", "storage_image_3d:")) and node.func.attr == "size":
                 if node.args:
                     raise ShaderTypeError("storage image size() takes no arguments")
-                return "ivec2"
+                return "ivec3" if owner_type.startswith("storage_image_3d:") else "ivec2"
             if owner_type == "sampled_texture_3d_array" and node.func.attr == "sample":
                 if len(node.args) != 2:
                     raise ShaderTypeError(
@@ -418,6 +448,10 @@ class _Lowerer:
                 "vec" in self.expression_type(node.left),
             )
         if isinstance(node, ast.Call) and not node.keywords:
+            if (isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name)
+                    and node.func.value.id in {"osh", "ordinaryshade"}
+                    and node.func.attr in {"float_bits_to_uint", "uint_bits_to_float"}):
+                return Bitcast(self.expression_type(node), self.expression(node.args[0]))
             selector_vector = (
                 isinstance(node.func, ast.Attribute)
                 and isinstance(node.func.value, ast.Name)
@@ -427,6 +461,9 @@ class _Lowerer:
                 and "vec" in self.expression_type(node.args[0])
             )
             function = self.expression(node.func)
+            if (isinstance(node.func, ast.Attribute) and node.func.attr == "size"
+                    and self.expression_type(node.func.value).startswith("storage_image_3d:")):
+                function = Attribute(self.expression(node.func.value), "size3d")
             if (
                 isinstance(node.func, ast.Attribute)
                 and isinstance(node.func.value, ast.Name)
@@ -522,6 +559,27 @@ class _Lowerer:
                 self.expression(stop_node), step, body, unroll,
             )
         if isinstance(node, ast.If):
+            if (isinstance(node.test, ast.Call) and isinstance(node.test.func, ast.Attribute)
+                    and isinstance(node.test.func.value, ast.Name)
+                    and node.test.func.value.id in {"osh", "ordinaryshade"}
+                    and node.test.func.attr == "specialization"):
+                args = node.test.args
+                if (len(args) != 1 or not isinstance(args[0], ast.Constant)
+                        or not isinstance(args[0].value, str)
+                        or not re.fullmatch(r"[A-Za-z0-9_() !&|<>=+*/%~^.-]+", args[0].value)):
+                    raise ShaderSyntaxError("specialization requires a preprocessor condition")
+                original = dict(self.value_types)
+                body = self.block(node.body)
+                body_types = dict(self.value_types)
+                self.value_types = dict(original)
+                alternative = self.block(node.orelse)
+                for name, type_name in body_types.items():
+                    if name in self.value_types and self.value_types[name] != type_name:
+                        if name not in original:
+                            del self.value_types[name]
+                        continue
+                    self.value_types[name] = type_name
+                return Specialization(args[0].value, body, alternative)
             condition_type = self.expression_type(node.test)
             if condition_type != "bool":
                 raise ShaderTypeError(
@@ -538,7 +596,11 @@ class _Lowerer:
                 raise ShaderSyntaxError("shader while loops do not support else")
             if self.expression_type(node.test) != "bool":
                 raise ShaderTypeError("shader while condition must be bool")
-            return While(self.expression(node.test), self.block(node.body))
+            condition = self.expression(node.test)
+            original_types = dict(self.value_types)
+            body = self.block(node.body)
+            self.value_types = original_types
+            return While(condition, body)
         if isinstance(node, ast.Expr):
             # Python function docstrings are bare string expressions in the
             # AST.  They are authoring metadata, not executable shader code.
@@ -596,6 +658,18 @@ def lower(shader: ComputeShader, *, helpers=(), externals=(), target="glsl") -> 
     next_binding = 0
     annotations = inspect.get_annotations(shader.function, eval_str=True)
     structures = {}
+    def register_structure(candidate):
+        if not isinstance(candidate, StructType) or candidate.name in structures:
+            return
+        structures[candidate.name] = candidate
+        for field in candidate.fields:
+            nested = (
+                field.type.element_type
+                if isinstance(field.type, (RuntimeArrayType, FixedArrayType))
+                else field.type
+            )
+            register_structure(nested)
+
     # WGSL fallback uniforms occupy descriptors; Vulkan push constants do not.
     # Reserve them before automatic allocation, regardless of parameter order.
     if target == "wgsl":
@@ -622,17 +696,6 @@ def lower(shader: ComputeShader, *, helpers=(), externals=(), target="glsl") -> 
         struct_type = getattr(
             declaration, "element_type", getattr(declaration, "struct_type", None)
         )
-        def register_structure(candidate):
-            if not isinstance(candidate, StructType) or candidate.name in structures:
-                return
-            structures[candidate.name] = candidate
-            for field in candidate.fields:
-                nested = (
-                    field.type.element_type
-                    if isinstance(field.type, (RuntimeArrayType, FixedArrayType))
-                    else field.type
-                )
-                register_structure(nested)
         register_structure(struct_type)
         binding = declaration.binding
         if binding is None:
@@ -656,7 +719,7 @@ def lower(shader: ComputeShader, *, helpers=(), externals=(), target="glsl") -> 
             )
         elif isinstance(resource.type, StorageImage):
             resource_types[resource.name] = (
-                f"storage_image:{resource.type.format}"
+                f"storage_image{'_3d' if resource.type.dimensions == 3 else ''}:{resource.type.format}"
             )
         elif isinstance(resource.type, SampledTexture3DArray):
             resource_types[resource.name] = "sampled_texture_3d_array"
@@ -819,6 +882,7 @@ def lower_graphics(shader: GraphicsShader, *, helpers=()) -> GraphicsModule:
     helper_modules = tuple(
         lower_function(
             helper, functions=helper_types, structures=lower_structures,
+            external_types={r.name: value_types[r.name] for r in resources},
         )
         for helper in helpers
     )
@@ -871,7 +935,7 @@ def lower_function(
     def contains_return(items):
         return any(
             isinstance(statement, Return)
-            or isinstance(statement, If) and (
+            or isinstance(statement, (If, Specialization)) and (
                 contains_return(statement.body) or contains_return(statement.else_body)
             )
             for statement in items

@@ -258,6 +258,14 @@ def compile_function(
     for name, value_type in dict(external_values or {}).items():
         if not isinstance(name, str) or not name.isidentifier():
             raise ShaderTypeError("external value names must be identifiers")
+        if isinstance(value_type, StorageImage):
+            value_type = ShaderType(f"storage_image{'_3d' if value_type.dimensions == 3 else ''}:{value_type.format}")
+        elif isinstance(value_type, AccelerationStructure):
+            value_type = ShaderType("acceleration_structure")
+        elif isinstance(value_type, SampledTexture2DArray):
+            value_type = ShaderType("sampled_texture_2d_array")
+        elif isinstance(value_type, SampledTexture3DArray):
+            value_type = ShaderType("sampled_texture_3d_array")
         if not isinstance(value_type, (ShaderType, StructType, RuntimeArrayType)):
             raise ShaderTypeError("external values require shader value types")
         declared_values[name] = value_type.name

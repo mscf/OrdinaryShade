@@ -9,11 +9,11 @@ from .errors import (
 )
 from .types import (
     AccelerationStructure, ComparisonSampler, FixedArrayType, PushConstants, QualifiedType, ShaderType, StageIOType, StorageBuffer, StorageImage, StorageImageArray, SampledDepthTexture2D, SampledTexture2D, SampledTexture2DArray, SampledTexture3D, SampledTexture3DArray, Sampler, StorageRecord, StructField,
-    StructType, RuntimeArrayType, UniformBuffer, acceleration_structure, absolute, any_value, atomic_add, boolean, bvec2, bvec3, bvec4, clamp, cosine, cross, exp, exp2, f32, floor, log2, memory_barrier_buffer,
-    global_invocation_id, local_invocation_id, local_invocation_index, workgroup_id, num_workgroups, workgroup_size, i32, ivec2, ivec3, ivec4, mat3, mat4, maximum, minimum, mix, power, refract, logarithm, ceiling,
+    StructType, RuntimeArrayType, UniformBuffer, acceleration_structure, absolute, all_value, any_value, atomic_add, atomic_or, boolean, bvec2, bvec3, bvec4, clamp, cosine, cross, exp, exp2, f32, floor, log2, memory_barrier_buffer,
+    global_invocation_id, local_invocation_id, local_invocation_index, workgroup_id, num_workgroups, workgroup_size, i32, ivec2, ivec3, ivec4, mat3, mat4, maximum, minimum, mix, power, smoothstep, modulo, unpack_unorm4x8, specialization, is_nan, is_inf, array_length, reflect, refract, logarithm, ceiling,
     pack_unorm4x8, float_bits_to_uint, uint_bits_to_float, bitfield_reverse, push_constants, round, select, sign, sqrt, storage_buffer, storage_image,
     storage_record, storage_image_array, comparison_sampler, sampled_depth_texture_2d, sampled_texture_2d, sampled_texture_2d_array, sampled_texture_3d, sampled_texture_3d_array, sampler, structure, runtime_array, local_array, shared, sine, arctangent2, arccosine, fraction, length, pack_half2x16,
-    array, builtin, invariant, inout, location, opaque_type, pack_unorm2x16, ray_query, subgroup_ballot,
+    array, builtin, invariant, inout, out, location, opaque_type, pack_unorm2x16, ray_query, subgroup_ballot,
     subgroup_ballot_bit_count, subgroup_ballot_exclusive_bit_count,
     subgroup_broadcast_first, subgroup_elect, reorder_thread, workgroup_barrier, u32, unpack_half2x16,
     unpack_unorm2x16, uniform_buffer, uvec2, uvec3, uvec4, vec2, vec3, vec4, void,
@@ -25,17 +25,17 @@ def unroll_range(*arguments):
     """Request compile-time expansion of a constant integer range."""
     return range(*arguments)
 
-__version__ = "0.1.0a0"
+__version__ = "0.1.0a5"
 
 __all__ = [
     "AccelerationStructure", "CompiledFunction", "CompiledShader", "CompilerUnavailableError", "ComputeShader", "ExternalFunction", "FixedArrayType", "GraphicsShader",
     "ShaderCompilationError", "ShaderError", "ShaderSyntaxError", "SourceMapEntry", "SourceSpan",
     "PushConstants", "QualifiedType", "ShaderFunction", "ShaderType", "ShaderTypeError", "StageIOType",
-    "StorageBuffer", "StorageImage", "StorageImageArray", "ComparisonSampler", "SampledDepthTexture2D", "SampledTexture2D", "SampledTexture2DArray", "SampledTexture3D", "SampledTexture3DArray", "Sampler", "StorageRecord", "StructField", "StructType", "RuntimeArrayType", "UniformBuffer", "acceleration_structure", "absolute", "any_value", "atomic_add", "boolean",
+    "StorageBuffer", "StorageImage", "StorageImageArray", "ComparisonSampler", "SampledDepthTexture2D", "SampledTexture2D", "SampledTexture2DArray", "SampledTexture3D", "SampledTexture3DArray", "Sampler", "StorageRecord", "StructField", "StructType", "RuntimeArrayType", "UniformBuffer", "acceleration_structure", "absolute", "all_value", "any_value", "atomic_add", "atomic_or", "boolean",
     "array", "builtin", "bvec2", "bvec3", "bvec4", "clamp", "cosine", "cross", "compile", "compile_function", "link_graphics",
-    "compute", "exp", "exp2", "external", "fragment", "logarithm", "ceiling", "f32", "floor", "function", "inout", "invariant", "length", "location", "log2", "opaque_type",
+    "compute", "exp", "exp2", "external", "fragment", "logarithm", "ceiling", "f32", "floor", "function", "inout", "out", "invariant", "length", "location", "log2", "opaque_type",
     "global_invocation_id", "local_invocation_id", "local_invocation_index", "workgroup_id", "num_workgroups", "workgroup_size", "i32", "ivec2", "ivec3", "ivec4", "mat3", "mat4", "maximum",
-    "memory_barrier_buffer", "minimum", "mix", "pack_half2x16", "pack_unorm2x16", "pack_unorm4x8", "float_bits_to_uint", "uint_bits_to_float", "bitfield_reverse", "power", "push_constants", "ray_query", "refract", "round", "select", "sign", "sqrt",
+    "memory_barrier_buffer", "minimum", "mix", "pack_half2x16", "pack_unorm2x16", "pack_unorm4x8", "float_bits_to_uint", "uint_bits_to_float", "bitfield_reverse", "power", "array_length", "specialization", "modulo", "smoothstep", "unpack_unorm4x8", "is_nan", "is_inf", "push_constants", "ray_query", "reflect", "refract", "round", "select", "sign", "sqrt",
     "storage_buffer", "storage_record", "runtime_array", "local_array", "shared", "comparison_sampler", "sampled_depth_texture_2d", "sampled_texture_2d", "sampled_texture_2d_array", "sampled_texture_3d", "sampled_texture_3d_array", "sampler", "sine", "arctangent2", "arccosine", "fraction", "subgroup_ballot",
     "subgroup_ballot_bit_count", "subgroup_ballot_exclusive_bit_count",
     "subgroup_broadcast_first", "subgroup_elect", "reorder_thread", "workgroup_barrier",

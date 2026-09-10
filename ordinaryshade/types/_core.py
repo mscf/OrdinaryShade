@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import inspect
 
 from ..errors import ShaderTypeError
@@ -71,6 +71,13 @@ def invariant(stage_io):
     return StageIOType(
         stage_io.type, stage_io.location, stage_io.builtin, invariant=True,
     )
+
+
+def out(value_type):
+    """Declare an output shader-function parameter."""
+    if not isinstance(value_type, (ShaderType, StructType)):
+        raise ShaderTypeError("out parameters require a shader value or structure type")
+    return QualifiedType(value_type, "out")
 
 
 def inout(value_type):
@@ -235,6 +242,47 @@ def cross(*values):
     raise RuntimeError("cross() is only valid in shader source")
 
 
+def atomic_or(*values):
+    raise RuntimeError("atomic_or() is only valid in shader source")
+
+
+def all_value(*values):
+    raise RuntimeError("all_value() is only valid in shader source")
+
+
+def smoothstep(*values):
+    raise RuntimeError("smoothstep() is only valid in shader source")
+
+
+def modulo(*values):
+    raise RuntimeError("modulo() is only valid in shader source")
+
+
+def unpack_unorm4x8(*values):
+    raise RuntimeError("unpack_unorm4x8() is only valid in shader source")
+
+
+def specialization(*values):
+    """A GLSL compile-time conditional; its body remains typed shader code."""
+    raise RuntimeError("specialization() is only valid in shader source")
+
+
+def is_nan(*values):
+    raise RuntimeError("is_nan() is only valid in shader source")
+
+
+def is_inf(*values):
+    raise RuntimeError("is_inf() is only valid in shader source")
+
+
+def array_length(*values):
+    raise RuntimeError("array_length() is only valid in shader source")
+
+
+def reflect(*values):
+    raise RuntimeError("reflect() is only valid in shader source")
+
+
 def refract(*values):
     raise RuntimeError("refract() is only valid in shader source")
 
@@ -364,6 +412,8 @@ def bitfield_reverse(*values):
 _IMAGE_FORMAT_TYPES = {
     "unformatted": "unformatted",
     "rgba16f": "rgba16f",
+    "rg16f": "rg16f",
+    "r8": "r8",
     "rgba32f": "rgba32f",
     "rgba8": "rgba8",
     "rgba8_snorm": "rgba8_snorm",
@@ -376,14 +426,17 @@ _IMAGE_FORMAT_TYPES = {
 
 @dataclass(frozen=True, slots=True)
 class StorageImage:
-    """A two-dimensional GLSL storage-image binding declaration."""
+    """A two- or three-dimensional storage-image binding declaration."""
 
     format: str
     access: str = "read_write"
     set: int = 0
     binding: int | None = None
+    dimensions: int = field(default=2, kw_only=True)
 
     def __post_init__(self):
+        if self.dimensions not in (2, 3):
+            raise ShaderTypeError("storage images require 2 or 3 dimensions")
         if self.format not in _IMAGE_FORMAT_TYPES:
             raise ShaderTypeError(f"unsupported storage image format: {self.format!r}")
         if self.access not in {"read", "write", "read_write"}:
@@ -392,8 +445,8 @@ class StorageImage:
             raise ShaderTypeError("descriptor set and binding must be non-negative")
 
 
-def storage_image(format: str, *, access="read_write", set=0, binding=None):
-    return StorageImage(format, access, set, binding)
+def storage_image(format: str, *, access="read_write", set=0, binding=None, dimensions=2):
+    return StorageImage(format, access, set, binding, dimensions=dimensions)
 
 
 @dataclass(frozen=True, slots=True)

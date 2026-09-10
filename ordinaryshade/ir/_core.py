@@ -42,6 +42,12 @@ class Subscript(Expression):
 
 
 @dataclass(frozen=True, slots=True)
+class Bitcast(Expression):
+    type_name: str
+    value: Expression
+
+
+@dataclass(frozen=True, slots=True)
 class Binary(Expression):
     left: Expression
     operator: str
@@ -78,6 +84,13 @@ class Call(Expression):
 
 class Statement:
     pass
+
+
+@dataclass(frozen=True, slots=True)
+class Specialization(Statement):
+    condition: str
+    body: tuple[Statement, ...]
+    else_body: tuple[Statement, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

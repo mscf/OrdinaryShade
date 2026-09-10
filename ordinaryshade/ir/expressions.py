@@ -1,8 +1,8 @@
 from ._core import (
-    Attribute, Binary, Call, Compare, Conditional, Expression, Literal, Name,
+    Attribute, Binary, Bitcast, Call, Compare, Conditional, Expression, Literal, Name,
     Subscript, Unary,
 )
 __all__ = [
-    "Attribute", "Binary", "Call", "Compare", "Conditional", "Expression",
+    "Attribute", "Binary", "Bitcast", "Call", "Compare", "Conditional", "Expression",
     "Literal", "Name", "Subscript", "Unary",
 ]
