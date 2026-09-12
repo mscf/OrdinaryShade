@@ -1101,3 +1101,37 @@ def test_atomic_exchange_returns_previous_integer_and_rejects_unsupported_wgsl()
         previous = osh.atomic_exchange(values[0], 1.0)
     with pytest.raises(osh.ShaderTypeError, match='matching scalar integer'):
         osh.compile(invalid)
+
+
+@osh.compute(workgroup_size=(1, 1, 1))
+def compare_exchange_probe(values: osh.storage_buffer(osh.u32, binding=0)):
+    old = osh.atomic_compare_exchange(values[0], osh.u32(7), osh.u32(9))
+    values[1] = old
+
+
+def test_compare_exchange_intrinsic():
+    assert 'atomicCompSwap(values[0], uint(7), uint(9))' in osh.compile(compare_exchange_probe).source
+    import pytest
+    with pytest.raises(osh.ShaderTypeError, match='atomic_compare_exchange'):
+        osh.compile(compare_exchange_probe, target='wgsl')
+
+
+@osh.compute(workgroup_size=(1, 1, 1))
+def signed_compare_exchange(values: osh.storage_buffer(osh.i32, binding=0)):
+    old = osh.atomic_compare_exchange(values[0], osh.i32(-7), osh.i32(9))
+    values[1] = old
+
+
+def test_compare_exchange_signed_and_invalid_types():
+    import pytest
+    assert 'atomicCompSwap' in osh.compile(signed_compare_exchange).source
+    @osh.compute()
+    def invalid(values: osh.storage_buffer(osh.u32, binding=0)):
+        old = osh.atomic_compare_exchange(values[0], osh.i32(7), osh.u32(9))
+    with pytest.raises(osh.ShaderTypeError, match='matching scalar integer'):
+        osh.compile(invalid)
+    @osh.compute()
+    def missing(values: osh.storage_buffer(osh.u32, binding=0)):
+        old = osh.atomic_compare_exchange(values[0], osh.u32(9))
+    with pytest.raises(osh.ShaderTypeError, match='atomic_compare_exchange'):
+        osh.compile(missing)

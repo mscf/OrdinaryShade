@@ -242,6 +242,11 @@ def cross(*values):
     raise RuntimeError("cross() is only valid in shader source")
 
 
+def atomic_compare_exchange(*values):
+    """Atomically replace an integer when it equals the comparator; return old value."""
+    raise RuntimeError("atomic_compare_exchange() is only valid in shader source")
+
+
 def atomic_exchange(*values):
     """Atomically replace a storage integer and return its previous value (GLSL)."""
     raise RuntimeError("atomic_exchange() is only valid in shader source")

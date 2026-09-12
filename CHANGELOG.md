@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.0a7
+
+- Add typed signed/unsigned integer compare-and-exchange for GLSL/SPIR-V.
+- Validate matching operands and explicitly reject unsupported WGSL use.
+- Exercise GPU hash-table use through vxl8r visible-face averaging.
+
 ## 0.1.0a6
 
 - Add typed integer `atomic_exchange` for GLSL/SPIR-V; explicitly reject unsupported WGSL use.

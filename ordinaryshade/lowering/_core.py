@@ -279,12 +279,12 @@ class _Lowerer:
                     "subgroup_ballot_exclusive_bit_count",
                 }:
                     return "uint"
-                if intrinsic == "atomic_exchange":
-                    if len(node.args) != 2:
-                        raise ShaderTypeError("atomic_exchange requires a storage integer and replacement")
+                if intrinsic in {"atomic_exchange", "atomic_compare_exchange"}:
+                    if len(node.args) != (3 if intrinsic == "atomic_compare_exchange" else 2):
+                        raise ShaderTypeError(f"{intrinsic} requires a storage integer, comparator (for compare-exchange), and replacement")
                     target = self.expression_type(node.args[0])
-                    if target not in {"int", "uint"} or self.expression_type(node.args[1]) != target:
-                        raise ShaderTypeError("atomic_exchange requires matching scalar integer types")
+                    if target not in {"int", "uint"} or any(self.expression_type(arg) != target for arg in node.args[1:]):
+                        raise ShaderTypeError(f"{intrinsic} requires matching scalar integer types")
                     return target
                 if intrinsic in {"subgroup_broadcast_first", "atomic_add"}:
                     return self.expression_type(node.args[0])
