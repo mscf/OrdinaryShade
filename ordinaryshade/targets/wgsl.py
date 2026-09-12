@@ -240,7 +240,7 @@ def _expression(value):
             f"{_expression(value.right)})"
         )
     if isinstance(value, Call):
-        if (_is_ordinaryshade_attribute(value.function) and value.function.attribute in {"is_nan", "is_inf", "modulo", "atomic_or"}):
+        if (_is_ordinaryshade_attribute(value.function) and value.function.attribute in {"is_nan", "is_inf", "modulo", "atomic_or", "atomic_exchange"}):
             raise ShaderTypeError(f"WGSL backend does not support {value.function.attribute}")
         if (isinstance(value.function, Attribute) and isinstance(value.function.value, Name)
                 and value.function.value.value in {"osh", "ordinaryshade"}

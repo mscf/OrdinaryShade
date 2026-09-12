@@ -86,7 +86,7 @@ def _expression(value):
                 "exp", "length", "cross", "smoothstep", "modulo", "unpack_unorm4x8", "is_nan", "is_inf", "reflect", "refract", "cosine", "sine", "arctangent2", "arccosine", "fraction", "vec2", "vec3", "vec4", "bvec2",
                 "all_value", "any_value", "subgroup_ballot", "subgroup_ballot_bit_count",
                 "subgroup_ballot_exclusive_bit_count", "subgroup_elect",
-                "subgroup_broadcast_first", "atomic_add", "atomic_or",
+                "subgroup_broadcast_first", "atomic_add", "atomic_exchange", "atomic_or",
                 "bvec3", "bvec4", "ivec2", "ivec3", "ivec4", "uvec2",
                 "uvec3", "uvec4", "mat3", "mat4",
                 "f32", "i32", "u32", "boolean", "pack_unorm4x8",
@@ -110,7 +110,7 @@ def _expression(value):
                 "subgroup_ballot_exclusive_bit_count": "subgroupBallotExclusiveBitCount",
                 "subgroup_elect": "subgroupElect",
                 "subgroup_broadcast_first": "subgroupBroadcastFirst",
-                "atomic_add": "atomicAdd", "atomic_or": "atomicOr",
+                "atomic_add": "atomicAdd", "atomic_exchange": "atomicExchange", "atomic_or": "atomicOr",
                 "pack_half2x16": "packHalf2x16",
                 "unpack_half2x16": "unpackHalf2x16",
                 "pack_unorm2x16": "packUnorm2x16",
@@ -178,6 +178,7 @@ def _expression(value):
                 "intersection_t": "rayQueryGetIntersectionTEXT",
                 "primitive_index": "rayQueryGetIntersectionPrimitiveIndexEXT",
                 "instance_custom_index": "rayQueryGetIntersectionInstanceCustomIndexEXT",
+                "instance_id": "rayQueryGetIntersectionInstanceIdEXT",
                 "barycentrics": "rayQueryGetIntersectionBarycentricsEXT",
             }
             if value.function.attribute in ray_methods:

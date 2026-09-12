@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.0a6
+
+- Add typed integer `atomic_exchange` for GLSL/SPIR-V; explicitly reject unsupported WGSL use.
+- Correct ray-query instance identity handling for application-owned acceleration structures.
+- Validate with 107 compiler tests (one optional test skipped) and native GPU integration tests.
+
 ## 0.1.0a5
 
 - Support typed compile-time shader variants, output parameters, runtime-array lengths, and 3D storage images.

@@ -691,6 +691,7 @@ class CompilerTests(unittest.TestCase):
             kind = query.intersection_type(True)
             if kind == osh.u32(1):
                 distance = query.intersection_t(True)
+                instance = query.instance_id(True)
 
         result = osh.compile(query_scene)
         self.assertIn("#extension GL_EXT_ray_query : require", result.source)
@@ -699,6 +700,7 @@ class CompilerTests(unittest.TestCase):
         self.assertIn("rayQueryInitializeEXT(query, scene", result.source)
         self.assertIn("while (rayQueryProceedEXT(query))", result.source)
         self.assertIn("rayQueryGetIntersectionTEXT(query, true)", result.source)
+        self.assertIn("rayQueryGetIntersectionInstanceIdEXT(query, true)", result.source)
         self.assertEqual(result.reflection.resources[0].kind, "acceleration_structure")
         with self.assertRaisesRegex(osh.ShaderTypeError, "WGSL does not support"):
             osh.compile(query_scene, target="wgsl")
@@ -1081,3 +1083,21 @@ def test_compiled_shader_has_stable_identity_and_source_map():
     assert len(first.cache_key) == 64
     assert first.source_map
     assert first.source_map[0].source.path.endswith("test_compiler.py")
+
+
+def test_atomic_exchange_returns_previous_integer_and_rejects_unsupported_wgsl():
+    import pytest
+    @osh.compute(workgroup_size=(1, 1, 1))
+    def exchange(values: osh.storage_buffer(osh.u32, access='read_write')):
+        previous = osh.atomic_exchange(values[0], osh.u32(9))
+        values[1] = previous
+    result = osh.compile(exchange)
+    assert 'atomicExchange(values[0], uint(9))' in result.source
+    assert 'uint previous' in result.source
+    with pytest.raises(osh.ShaderTypeError, match='atomic_exchange'):
+        osh.compile(exchange, target='wgsl')
+    @osh.compute(workgroup_size=(1, 1, 1))
+    def invalid(values: osh.storage_buffer(osh.f32, access='read_write')):
+        previous = osh.atomic_exchange(values[0], 1.0)
+    with pytest.raises(osh.ShaderTypeError, match='matching scalar integer'):
+        osh.compile(invalid)
