@@ -51,7 +51,7 @@ class _Lowerer:
     def expression_type(self, node):
         if isinstance(node, ast.Name):
             try:
-                return self.value_types[node.id]
+                return self.value_types[node.id].removeprefix("shared:")
             except KeyError as error:
                 raise ShaderTypeError(
                     f"unknown shader value {node.id!r} at {_location(node)}"
@@ -245,20 +245,34 @@ class _Lowerer:
                         )
                     return f"local_array:{element_type}:{node.args[1].value}"
                 if intrinsic == "shared":
-                    if len(node.args) != 1 or not (
-                        isinstance(node.args[0], ast.Attribute)
-                        and isinstance(node.args[0].value, ast.Name)
-                        and node.args[0].value.id in {"osh", "ordinaryshade"}
-                    ):
+                    if len(node.args) != 1 or node.keywords:
                         raise ShaderTypeError("shared() requires a shader type")
-                    element_name = node.args[0].attr
+                    element = node.args[0]
+                    count = None
+                    if isinstance(element, ast.Call):
+                        if not (isinstance(element.func, ast.Attribute)
+                                and isinstance(element.func.value, ast.Name)
+                                and element.func.value.id in {"osh", "ordinaryshade"}
+                                and element.func.attr == "array" and len(element.args) == 2
+                                and not element.keywords
+                                and isinstance(element.args[1], ast.Constant)
+                                and type(element.args[1].value) is int
+                                and element.args[1].value > 0):
+                            raise ShaderTypeError("shared arrays require a positive constant size")
+                        count = element.args[1].value
+                        element = element.args[0]
+                    if not (isinstance(element, ast.Attribute)
+                            and isinstance(element.value, ast.Name)
+                            and element.value.id in {"osh", "ordinaryshade"}):
+                        raise ShaderTypeError("shared() requires a shader type")
+                    element_name = element.attr
                     element_type = constructors.get(element_name)
                     if element_type is None and element_name in self.structures:
                         element_type = element_name
                     if element_type is None:
-                        raise ShaderTypeError(
-                            f"unsupported shared value type {element_name!r}"
-                        )
+                        raise ShaderTypeError(f"unsupported shared value type {element_name!r}")
+                    if count is not None:
+                        return f"shared:fixed_array:{element_type}:{count}"
                     return f"shared:{element_type}"
                 if intrinsic in constructors:
                     return constructors[intrinsic]
@@ -287,7 +301,18 @@ class _Lowerer:
                         raise ShaderTypeError(f"{intrinsic} requires matching scalar integer types")
                     return target
                 if intrinsic in {"subgroup_broadcast_first", "atomic_add"}:
-                    return self.expression_type(node.args[0])
+                    target = self.expression_type(node.args[0])
+                    if intrinsic == "atomic_add" and target == "float":
+                        if "buffer_float32_atomic_add" not in self.capabilities:
+                            raise ShaderTypeError("Float atomic_add requires buffer_float32_atomic_add capability")
+                        root = node.args[0]
+                        while isinstance(root, (ast.Attribute, ast.Subscript)):
+                            root = root.value
+                        if not isinstance(root, ast.Name) or not self.value_types.get(root.id, "").startswith("storage_buffer:"):
+                            raise ShaderTypeError("Float atomic_add requires a storage-buffer scalar")
+                        if len(node.args) != 2 or self.expression_type(node.args[1]) != target:
+                            raise ShaderTypeError("Float atomic_add requires matching scalar float types")
+                    return target
                 if intrinsic in {"workgroup_barrier", "reorder_thread"}:
                     return "void"
                 if intrinsic == "pack_unorm4x8":
@@ -455,6 +480,10 @@ class _Lowerer:
                 "vec" in self.expression_type(node.left),
             )
         if isinstance(node, ast.Call) and not node.keywords:
+            if (isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name)
+                    and node.func.value.id in {"osh", "ordinaryshade"}
+                    and node.func.attr == "atomic_add"):
+                self.expression_type(node)
             if (isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name)
                     and node.func.value.id in {"osh", "ordinaryshade"}
                     and node.func.attr in {"float_bits_to_uint", "uint_bits_to_float"}):

@@ -705,6 +705,21 @@ class CompilerTests(unittest.TestCase):
         with self.assertRaisesRegex(osh.ShaderTypeError, "WGSL does not support"):
             osh.compile(query_scene, target="wgsl")
 
+    def test_vulkan_triangle_candidate_confirmation(self):
+        @osh.compute(workgroup_size=(1, 1, 1))
+        def query_scene(scene: osh.acceleration_structure(binding=0)):
+            query = osh.ray_query()
+            query.initialize(scene, osh.u32(2), osh.u32(255), osh.vec3(0),
+                             0.001, osh.vec3(0, 0, 1), 100.0)
+            while query.proceed():
+                if query.intersection_type(False) == osh.u32(0):
+                    query.confirm_intersection()
+
+        source = osh.compile(query_scene).source
+        self.assertIn("rayQueryConfirmIntersectionEXT(query)", source)
+        with self.assertRaisesRegex(osh.ShaderTypeError, "WGSL does not support"):
+            osh.compile(query_scene, target="wgsl")
+
     def test_declared_subgroup_ballot_and_atomics_compile(self):
         @osh.structure
         class Counters:

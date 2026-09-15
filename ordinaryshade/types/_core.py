@@ -164,8 +164,8 @@ def local_array(element_type, count: int):
 
 
 def shared(element_type):
-    """Declare a workgroup-shared value in a compute entry point."""
-    if not isinstance(element_type, (ShaderType, StructType)):
+    """Declare a workgroup-shared value or fixed-size array."""
+    if not isinstance(element_type, (ShaderType, StructType, FixedArrayType)):
         raise ShaderTypeError("shared values require a shader value or structure type")
     raise RuntimeError("shared() is only valid in shader source")
 

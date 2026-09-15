@@ -153,6 +153,9 @@ def _type(type_name):
 
 
 def _value_type(type_name):
+    if type_name.startswith("fixed_array:"):
+        _, element, count = type_name.split(":", 2)
+        return f"array<{_value_type(element)}, {count}>"
     return type_name if type_name not in _TYPES else _type(type_name)
 
 
@@ -430,6 +433,8 @@ def emit_wgsl(module):
         raise ShaderTypeError("WGSL does not support external function declarations")
     if "subgroup_ballot" in module.capabilities:
         raise ShaderTypeError("WGSL subgroup ballot support is not yet available")
+    if "buffer_float32_atomic_add" in module.capabilities:
+        raise ShaderTypeError("WGSL buffer float32 atomic addition is not available")
     if "shader_reorder" in module.capabilities:
         raise ShaderTypeError("WGSL shader invocation reordering is not available")
     structures = {}

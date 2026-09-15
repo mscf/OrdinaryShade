@@ -60,7 +60,7 @@ def compute(*, workgroup_size=(1, 1, 1), capabilities=()):
     if len(size) != 3 or any(value < 1 for value in size):
         raise ShaderTypeError("workgroup_size must contain three positive integers")
     declared_capabilities = tuple(capabilities)
-    supported = {"subgroup_ballot", "shader_reorder"}
+    supported = {"subgroup_ballot", "shader_reorder", "buffer_float32_atomic_add"}
     unknown = set(declared_capabilities) - supported
     if unknown:
         raise ShaderTypeError(f"unsupported shader capabilities: {sorted(unknown)!r}")

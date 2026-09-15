@@ -173,6 +173,7 @@ def _expression(value):
                 "initialize": "rayQueryInitializeEXT",
                 "terminate": "rayQueryTerminateEXT",
                 "generate_intersection": "rayQueryGenerateIntersectionEXT",
+                "confirm_intersection": "rayQueryConfirmIntersectionEXT",
                 "proceed": "rayQueryProceedEXT",
                 "intersection_type": "rayQueryGetIntersectionTypeEXT",
                 "intersection_t": "rayQueryGetIntersectionTEXT",
@@ -225,6 +226,15 @@ def _expression(value):
                 return f"imageSize({owner})"
         return f"{_expression(value.function)}({arguments})"
     raise ShaderTypeError(f"GLSL backend cannot emit {type(value).__name__}")
+
+
+def _shared_declaration(value):
+    type_name = value.type_name.removeprefix("shared:")
+    name = _identifier(value.name)
+    if type_name.startswith("fixed_array:"):
+        _, element, count = type_name.split(":", 2)
+        return f"shared {element} {name}[{count}];"
+    return f"shared {type_name} {name};"
 
 
 def _statement(value, indent=1):
@@ -333,8 +343,7 @@ def emit_glsl(module, declaration=False):
         ]
         lines = [
             *(
-                f"shared {value.type_name.split(':', 1)[1]} "
-                f"{_identifier(value.name)};"
+                _shared_declaration(value)
                 for value in shared_values
             ),
             f"{module.return_type} {module.name}({parameters})",
@@ -355,6 +364,8 @@ def emit_glsl(module, declaration=False):
     if "subgroup_ballot" in module.capabilities:
         lines.append("#extension GL_KHR_shader_subgroup_basic : require")
         lines.append("#extension GL_KHR_shader_subgroup_ballot : require")
+    if "buffer_float32_atomic_add" in module.capabilities:
+        lines.append("#extension GL_EXT_shader_atomic_float : require")
     if "shader_reorder" in module.capabilities:
         lines.append("#extension GL_NV_shader_invocation_reorder : require")
     lines.extend([
@@ -368,7 +379,7 @@ def emit_glsl(module, declaration=False):
     ]
     for value in shared_values:
         lines.append(
-            f"shared {value.type_name.split(':', 1)[1]} {_identifier(value.name)};"
+            _shared_declaration(value)
         )
     if shared_values:
         lines.append("")

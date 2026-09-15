@@ -187,3 +187,11 @@ python -m build
 
 The package is pre-alpha. The Python language subset and shader ABI may change
 before the first stable release.
+
+Buffer float32 atomic addition is available for GLSL compute shaders through
+`@osh.compute(..., capabilities=('buffer_float32_atomic_add',))` and
+`osh.atomic_add(buffer[index], float_value)`. The target must be a storage-buffer
+scalar float. GLSL emits `GL_EXT_shader_atomic_float`; the application must enable
+the Vulkan buffer float32 atomic/add features. This capability does not enable
+shared-memory/image float atomics, and WGSL rejects it. Atomic sums still have
+order-dependent floating-point rounding.
