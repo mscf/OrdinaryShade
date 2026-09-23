@@ -25,7 +25,7 @@ def unroll_range(*arguments):
     """Request compile-time expansion of a constant integer range."""
     return range(*arguments)
 
-__version__ = "0.1.0a14"
+__version__ = "0.1.0a15"
 
 __all__ = [
     "AccelerationStructure", "CompiledFunction", "CompiledShader", "CompilerUnavailableError", "ComputeShader", "ExternalFunction", "FixedArrayType", "GraphicsShader",
